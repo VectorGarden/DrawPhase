@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Draw Phase — Yu-Gi-Oh! opening hand odds</title>
+<meta name="description" content="Draw Phase works out how often your Yu-Gi-Oh! deck opens the cards you need. Set your deck size, hand size and card groups for exact hypergeometric draw odds." />
+<meta name="color-scheme" content="dark light" />
+<meta name="theme-color" content="#0D0F16" id="meta-theme-color" />
+
+<link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+<link rel="alternate icon" href="./favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png" />
+<link rel="manifest" href="./site.webmanifest" />
+
+<link rel="canonical" href="https://calc.reizu.dev/" />
+<meta property="og:site_name" content="Draw Phase" />
+<meta property="og:title" content="Draw Phase — Yu-Gi-Oh! opening hand odds" />
+<meta property="og:description" content="Set your deck, name the cards that matter, and see how often your opening hand delivers." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://calc.reizu.dev/" />
+<meta property="og:image" content="https://calc.reizu.dev/assets/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Draw Phase — exact hypergeometric draw odds for Yu-Gi-Oh! opening hands." />
+<meta name="twitter:card" content="summary_large_image" />
+
+<script>
+  /* Set the theme before first paint so the page never flashes the wrong one. */
+  (function () {
+    try {
+      var saved = localStorage.getItem('hypergeo.theme');
+      var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) { /* storage blocked — the default in the markup stands */ }
+  })();
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
+
+<a class="skip-link" href="#deck-setup">Skip to the calculator</a>
+
+<header class="top">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+      <g transform="translate(32 37)">
+        <rect class="mk mk-a" x="-10.5" y="-24" width="21" height="32" rx="4" transform="rotate(-27)" />
+        <rect class="mk mk-b" x="-10.5" y="-24" width="21" height="32" rx="4" transform="rotate(27)" />
+        <rect class="mk mk-c" x="-10.5" y="-24" width="21" height="32" rx="4" />
+        <path class="mk-spark" d="M0 -15.6 L1.84 -9.84 L7.6 -8 L1.84 -6.16 L0 -0.4 L-1.84 -6.16 L-7.6 -8 L-1.84 -9.84 Z" />
+      </g>
+    </svg>
+    <span class="brand-text">
+      <span class="brand-name">Draw Phase</span>
+      <span class="brand-tag">Yu-Gi-Oh! opening hands</span>
+    </span>
+  </div>
+
+  <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light mode" title="Switch to light mode">
+    <span class="theme-toggle-track" aria-hidden="true">
+      <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.4"/><g class="rays"><path d="M12 1.9v3M12 19.1v3M22.1 12h-3M4.9 12h-3M19.2 4.8l-2.1 2.1M6.9 17.1l-2.1 2.1M19.2 19.2l-2.1-2.1M6.9 6.9L4.8 4.8"/></g></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24"><path d="M20.3 14.2A8.6 8.6 0 0 1 9.8 3.7a8.7 8.7 0 1 0 10.5 10.5Z"/></svg>
+      <span class="theme-toggle-thumb"></span>
+    </span>
+  </button>
+</header>
+
+<main>
+  <section class="intro">
+    <p class="eyebrow">Hypergeometric draw odds</p>
+    <h1>Will you open it?</h1>
+    <p class="lede">Every ratio argument ends the same way: how often does this deck actually put the right cards in your hand? Set the deck, name the cards that matter, and read the real number.</p>
+  </section>
+
+  <div class="layout">
+    <div class="col-build">
+
+      <section class="panel" id="deck-setup" aria-labelledby="deck-setup-title">
+        <div class="panel-head">
+          <h2 id="deck-setup-title">Your deck</h2>
+          <p class="panel-note">Main deck only — leave the Extra Deck out of it.</p>
+        </div>
+
+        <div class="deck-grid">
+          <div class="field">
+            <label for="deck-size">Cards in deck</label>
+            <input id="deck-size" class="num" type="number" min="1" max="200" step="1" inputmode="numeric" value="40" />
+            <div class="chips" role="group" aria-label="Common deck sizes">
+              <button type="button" class="chip" data-deck="40">40</button>
+              <button type="button" class="chip" data-deck="41">41</button>
+              <button type="button" class="chip" data-deck="60">60</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="hand-size">Cards drawn</label>
+            <input id="hand-size" class="num" type="number" min="1" max="60" step="1" inputmode="numeric" value="5" />
+            <div class="chips" role="group" aria-label="Common hand sizes">
+              <button type="button" class="chip" data-hand="5">Going first · 5</button>
+              <button type="button" class="chip" data-hand="6">Going second · 6</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="groups-title">
+        <div class="panel-head">
+          <h2 id="groups-title">The cards that matter</h2>
+          <p class="panel-note">Group your cards by the job they do, then say how many of each you want to see in hand.</p>
+        </div>
+
+        <div class="group-legend" aria-hidden="true">
+          <span class="gl-name">Group</span>
+          <span class="gl-num">In deck</span>
+          <span class="gl-num">Min</span>
+          <span class="gl-num">Max</span>
+          <span class="gl-gap"></span>
+        </div>
+
+        <ol class="groups" id="groups"></ol>
+
+        <div class="rest" id="rest-row">
+          <span class="rest-spine" aria-hidden="true"></span>
+          <span class="rest-name">Everything else</span>
+          <span class="rest-num" id="rest-amt">28</span>
+          <span class="rest-num rest-dim">0</span>
+          <span class="rest-num" id="rest-max">4</span>
+          <span class="gl-gap"></span>
+        </div>
+
+        <div class="group-actions">
+          <button type="button" class="btn btn-add" id="add-group">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><path d="M12 5v14M5 12h14"/></svg>
+            Add a group
+          </button>
+          <button type="button" class="btn btn-quiet" id="reset">Start over</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="examples-title">
+        <button class="disclosure" id="examples-toggle" type="button" aria-expanded="false" aria-controls="examples">
+          <h2 id="examples-title">Two worked examples</h2>
+          <svg class="disclosure-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+
+        <div class="examples" id="examples" hidden>
+          <article class="example">
+            <p>You run a single Allure of Darkness and ten DARK monsters, and you want to open Allure with something to banish. Ask for exactly one Allure and at least one DARK:</p>
+            <table class="example-table">
+              <thead><tr><th>Group</th><th>In deck</th><th>Min</th><th>Max</th></tr></thead>
+              <tbody>
+                <tr><td>Allure of Darkness</td><td>1</td><td>1</td><td>1</td></tr>
+                <tr><td>DARK monsters</td><td>10</td><td>1</td><td>4</td></tr>
+              </tbody>
+            </table>
+            <button type="button" class="btn btn-ghost" data-example="allure">Load this example</button>
+          </article>
+
+          <article class="example">
+            <p>Terraforming fetches Dragon Ravine, so treat all five as the same card. Pair that with your six Dux and Phalanx and ask for at least one of each:</p>
+            <table class="example-table">
+              <thead><tr><th>Group</th><th>In deck</th><th>Min</th><th>Max</th></tr></thead>
+              <tbody>
+                <tr><td>Ravine + Terraforming</td><td>5</td><td>1</td><td>5</td></tr>
+                <tr><td>Dux or Phalanx</td><td>6</td><td>1</td><td>5</td></tr>
+              </tbody>
+            </table>
+            <button type="button" class="btn btn-ghost" data-example="ravine">Load this example</button>
+          </article>
+
+          <p class="example-tip">The trick is grouping. Any cards that are interchangeable for the combo you are testing belong on the same line, and a searcher counts as a copy of whatever it fetches.</p>
+        </div>
+      </section>
+
+      <section class="panel panel-math" aria-labelledby="math-title">
+        <h2 id="math-title">How the number is worked out</h2>
+        <p>Your deck is a finite pile, and each card you draw is gone from it, so the odds shift with every draw. That is precisely what the hypergeometric distribution describes, and it is what this page computes: the exact figure, not a simulation and not an approximation.</p>
+        <p>Groups are counted together, so a hand only passes when it meets <em>all</em> of your requirements at once. The percentage is the share of every possible opening hand that would pass.</p>
+      </section>
+    </div>
+
+    <aside class="col-odds">
+      <div class="odds-card">
+        <p class="eyebrow">Chance to open this hand</p>
+
+        <p class="odds-figure" id="odds-figure">
+          <span id="odds-value">—</span><span class="odds-pct">%</span>
+        </p>
+
+        <div class="odds-bar">
+          <span class="odds-bar-fill" id="odds-fill"></span>
+        </div>
+
+        <p class="odds-plain" id="odds-plain" aria-live="polite"></p>
+
+        <div class="hand" id="hand-strip" aria-hidden="true"></div>
+
+        <div class="deal-row">
+          <button type="button" class="btn btn-deal" id="deal">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><path d="M4.5 8.2 14 4.4l5.5 12.2-9.5 3.8z"/><path d="M8.4 11.6h5.2"/></svg>
+            Deal a test hand
+          </button>
+          <p class="deal-tally" id="deal-tally" aria-live="polite"></p>
+        </div>
+
+        <div class="breakdown" id="breakdown"></div>
+
+        <div class="share">
+          <button type="button" class="btn btn-quiet" id="copy-link">Copy link to this setup</button>
+          <button type="button" class="btn btn-quiet" id="copy-summary">Copy the results</button>
+        </div>
+        <p class="share-status" id="share-status" role="status"></p>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<footer class="bottom">
+  <p class="made">Created by <span class="made-name">Reizu</span></p>
+  <p class="made-note">Built on the original <span class="nowrap">yugioh.party</span> calculator by Rustywolf &amp; Bilaterus.</p>
+  <p class="made-note">Exact hypergeometric maths, worked out in your browser. Nothing you type ever leaves this page.</p>
+</footer>
+
+<template id="group-template">
+  <li class="group">
+    <span class="group-spine" aria-hidden="true"></span>
+    <div class="group-body">
+      <div class="group-row">
+        <div class="field field-name">
+          <label>Group name</label>
+          <input class="text g-name" type="text" maxlength="30" placeholder="Starters" />
+        </div>
+        <div class="field field-num">
+          <label>In deck</label>
+          <input class="num g-amt" type="number" min="0" max="200" step="1" inputmode="numeric" />
+        </div>
+        <div class="field field-num">
+          <label>Min</label>
+          <input class="num g-min" type="number" min="0" max="60" step="1" inputmode="numeric" />
+        </div>
+        <div class="field field-num">
+          <label>Max</label>
+          <input class="num g-max" type="number" min="0" max="60" step="1" inputmode="numeric" />
+        </div>
+        <button type="button" class="btn-remove" aria-label="Remove this group" title="Remove this group">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+  </li>
+</template>
+
+<script src="./assets/app.js"></script>
+</body>
+</html>
