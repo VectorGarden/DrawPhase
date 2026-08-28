@@ -42,6 +42,7 @@
 
   var state = null;
   var lastShown = 0;
+  var lastSignature = null;
   var deals = 0;
   var hits = 0;
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -403,8 +404,7 @@
      The main update pass
      ====================================================================== */
 
-  function update(options) {
-    options = options || {};
+  function update() {
     state = readState();
 
     var check = validate(state);
@@ -418,7 +418,12 @@
     el['rest-max'].textContent = restMax < 0 ? '\u2212' + Math.abs(restMax) : restMax;
     el['rest-max'].classList.toggle('bad', restMax < 0);
 
-    if (!options.keepTally) resetTally();
+    /* The tally is a running sample of these exact odds, so it only goes stale
+       when the numbers move. Renaming a group used to throw away a hundred
+       dealt hands for a change that cannot alter the result. */
+    var signature = tallySignature(state);
+    if (signature !== lastSignature) resetTally();
+    lastSignature = signature;
 
     if (!check.ok) {
       oddsCard.classList.add('is-error');
@@ -521,10 +526,36 @@
      Deal a test hand
      ====================================================================== */
 
+  /* Everything that moves the odds, and nothing that does not — group names
+     are deliberately absent. */
+  function tallySignature(s) {
+    return s.deck + '/' + s.hand + '/' + s.groups.map(function (g) {
+      return g.amt + ':' + g.min + ':' + g.max;
+    }).join(',');
+  }
+
   function resetTally() {
     deals = 0;
     hits = 0;
     el['deal-tally'].innerHTML = '';
+  }
+
+  /* What the strip is showing, in words. Two-letter chips coloured by group
+     are meaningless read aloud one by one, so the hand is summarised by what
+     it actually contains. */
+  function describeHand(cards) {
+    var counts = {};
+    var others = 0;
+    cards.forEach(function (c) {
+      if (!c) { others++; return; }
+      counts[c.index] = (counts[c.index] || 0) + 1;
+    });
+    var parts = [];
+    state.groups.forEach(function (g, i) {
+      if (counts[i]) parts.push(counts[i] + ' ' + groupLabel(g, i));
+    });
+    if (others) parts.push(others + ' from everything else');
+    return parts.join(', ');
   }
 
   /* Every card dealt gets a slot. Twelve used to be the ceiling, so a larger
@@ -546,8 +577,22 @@
         html += '<span class="hand-card"></span>';
       }
     }
-    el['hand-strip'].classList.toggle('tight', size > 24);
-    el['hand-strip'].innerHTML = html;
+    var strip = el['hand-strip'];
+    strip.classList.toggle('tight', size > 24);
+    strip.innerHTML = html;
+
+    /* Empty slots really are decoration, so they stay hidden. A dealt hand is
+       information, and the whole strip is one picture of it — hence a single
+       described image rather than a run of cryptic two-letter chips. */
+    if (cards) {
+      strip.removeAttribute('aria-hidden');
+      strip.setAttribute('role', 'img');
+      strip.setAttribute('aria-label', 'Hand dealt: ' + describeHand(cards) + '.');
+    } else {
+      strip.setAttribute('aria-hidden', 'true');
+      strip.removeAttribute('role');
+      strip.removeAttribute('aria-label');
+    }
   }
 
   function deal() {
@@ -588,7 +633,10 @@
     if (pass) hits++;
     var rate = ((hits / deals) * 100).toFixed(1);
     el['deal-tally'].innerHTML = '<span class="' + (pass ? 'hit' : 'miss') + '">' +
-      (pass ? 'Hit' : 'Miss') + '</span> · ' + hits + ' of ' + deals + ' dealt (' + rate + '%)';
+      (pass ? 'Hit' : 'Miss') + '</span> · ' + hits + ' of ' + deals + ' dealt (' + rate + '%)' +
+      /* Announced with the result, so pressing Deal says what turned up
+         instead of only whether it counted. Visually this stays compact. */
+      '<span class="sr-only"> — drew ' + escapeHtml(describeHand(cards)) + '.</span>';
   }
 
   /* ======================================================================
@@ -676,12 +724,12 @@
      Wiring
      ====================================================================== */
 
-  function loadState(s, options) {
+  function loadState(s) {
     el['deck-size'].value = s.deck;
     el['hand-size'].value = s.hand;
     renderGroups(s.groups.length ? s.groups : DEFAULTS.groups);
     syncChips();
-    update(options);
+    update();
   }
 
   function syncChips() {
@@ -739,6 +787,8 @@
     el.reset.addEventListener('click', function () {
       if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
       loadState(DEFAULTS);
+      resetTally();   /* "Start over" means the dealt hands go too, even when
+                         the numbers happen to already match the defaults. */
       flash('Back to the starting setup.');
     });
 
