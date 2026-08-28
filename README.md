@@ -29,8 +29,9 @@ around it is new.
 
 ## Deploying to GitHub Pages
 
-Everything is static — no build step, no dependencies, no Actions workflow
-needed.
+Everything is static — no build step and no dependencies. There is an Actions
+workflow, but it only runs the tests; publishing is Pages serving the branch
+and does not depend on it.
 
 **1. Push the files.** Put the contents of this folder at the *root* of the
 branch you publish from (`main` or `gh-pages`), not inside a subfolder:
@@ -110,6 +111,27 @@ python3 -m http.server 8000
 Every path is relative, so it works from `file://`, from a custom domain, and
 from a project subpath (`user.github.io/repo/`) without changes.
 
+## Tests
+
+The probability lives in `assets/math.js`, apart from the page, so it can be
+loaded outside a browser and checked:
+
+```bash
+node test/odds.test.js
+```
+
+No dependencies and no test framework, same as the rest of the repo. A wrong
+probability looks exactly like a right one — it is a plausible percentage
+either way — so the main check shares no reasoning with the code it tests: it
+builds a real deck, enumerates every hand that can be drawn from it, and
+counts the ones that pass, with no binomial coefficients involved. The rest
+covers values worked out by hand, invariants that must hold for any input, and
+a ceiling on how long the twelve-group worst case may take, which is what
+stops the memoisation quietly regressing.
+
+GitHub Actions runs it on every push and pull request. Deployment is still
+just Pages serving the branch; nothing about publishing depends on it.
+
 ## How the maths works
 
 Your deck is a finite pile and each card drawn is gone from it, so the odds
@@ -124,8 +146,8 @@ C(n₁,c₁) × C(n₂,c₂) × … × C(rest, h − Σcᵢ)
 
 The calculator sums that over every combination inside your min/max ranges and
 divides by `C(N,h)`. All of it runs in `BigInt`, so nothing is lost to floating
-point even on a 60-card deck. Results are verified against brute-force
-enumeration of the full hand space.
+point even on a 60-card deck. Results are checked against a straight
+enumeration of the full hand space by `test/odds.test.js`.
 
 Theme and saved setups live under the `drawphase.*` local storage keys.
 

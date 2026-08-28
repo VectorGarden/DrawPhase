@@ -1,0 +1,33 @@
+# The site itself needs no build and no Actions run to deploy — Pages serves
+# the branch directly. This workflow exists for one reason: a wrong
+# probability looks exactly like a right one, so the odds get checked against
+# a straight enumeration of every possible hand before anything merges.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  odds:
+    name: Odds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No install step: the test has no dependencies, by design.
+      - name: Check the odds
+        run: node test/odds.test.js
+
+      - name: Check the scripts parse
+        run: |
+          node --check assets/math.js
+          node --check assets/app.js
