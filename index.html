@@ -29,7 +29,7 @@
   /* Set the theme before first paint so the page never flashes the wrong one. */
   (function () {
     try {
-      var saved = localStorage.getItem('hypergeo.theme');
+      var saved = localStorage.getItem('drawphase.theme');
       var theme = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
       document.documentElement.setAttribute('data-theme', theme);
     } catch (e) { /* storage blocked — the default in the markup stands */ }

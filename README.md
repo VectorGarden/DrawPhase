@@ -90,10 +90,10 @@ Two ways around it:
 1. **Redirect at your DNS/CDN.** If the domain is on Cloudflare (proxied), a
    single Redirect Rule sends the second domain to `calc.reizu.dev`. Cleanest
    option, no extra repo.
-2. **A one-page redirect repo.** See `extras/second-domain-redirect/`. It's a
-   complete second Pages site whose only job is to bounce to the real one, and
-   because it's that repo's own configured domain, HTTPS works properly. The
-   redirect preserves `#d=...` share tokens.
+2. **A one-page redirect repo.** A second Pages repo whose only job is to
+   bounce to the real one. Because the redirect is served from that repo's own
+   configured domain, HTTPS works properly. Forward the `#d=...` share token
+   along with the redirect so shared setups survive the hop.
 
 Either way, keep one domain canonical and redirect the other rather than
 serving the site at both — duplicate content, split analytics, and the
