@@ -429,6 +429,20 @@
      Per-group breakdown
      ====================================================================== */
 
+  /* Which slice of the distribution to draw. The old code took k = 0..6 flat,
+     so any hand of seven or more cut the chart off mid-curve — and a group
+     asking for eight showed no highlighted bar at all, which reads as "this
+     never happens". Trim only where the probability is too small to see, and
+     never trim across the range the user actually asked for. */
+  function sparkRange(dist, lo, hi) {
+    var EPS = 0.0005;
+    var first = 0;
+    var last = dist.length - 1;
+    while (first < last && first < lo && dist[first] < EPS) first++;
+    while (last > first && last > hi && dist[last] < EPS) last--;
+    return { first: first, last: last };
+  }
+
   function renderBreakdown(s, groups) {
     if (!groups.length) { el.breakdown.innerHTML = ''; return; }
     var den = comb(s.deck, s.hand);
@@ -442,17 +456,21 @@
       }
       var p = ratio(own, den);
       var peak = Math.max.apply(null, dist) || 1;
-      var bars = dist.slice(0, 7).map(function (v, k) {
+      var span = sparkRange(dist, g.min, g.max);
+      var bars = '';
+      for (var b = span.first; b <= span.last; b++) {
+        var v = dist[b];
         var h = Math.max(8, Math.round((v / peak) * 100));
-        var inRange = k >= g.min && k <= g.max;
-        return '<span class="bd-bar' + (inRange ? ' in-range' : '') + '" style="height:' + h + '%" title="' +
-               k + ' in hand: ' + (v * 100).toFixed(1) + '%"></span>';
-      }).join('');
+        var inRange = b >= g.min && b <= g.max;
+        bars += '<span class="bd-bar' + (inRange ? ' in-range' : '') + '" style="height:' + h + '%" title="' +
+                b + ' in hand: ' + (v * 100).toFixed(1) + '%"></span>';
+      }
+      var wide = span.last - span.first >= 12 ? ' wide' : '';
 
       html += '<div class="bd-row" style="--spine:' + spineFor(i) + '">' +
                 '<span class="bd-dot"></span>' +
                 '<span class="bd-name">' + escapeHtml(groupLabel(s.groups[i], i)) + '</span>' +
-                '<span class="bd-spark">' + bars + '</span>' +
+                '<span class="bd-spark' + wide + '">' + bars + '</span>' +
                 '<span class="bd-val">' + (p * 100).toFixed(1) + '%</span>' +
               '</div>';
     });
@@ -476,8 +494,13 @@
     el['deal-tally'].innerHTML = '';
   }
 
+  /* Every card dealt gets a slot. Twelve used to be the ceiling, so a larger
+     hand showed only the front of a sorted list — hiding whichever groups sort
+     last, even though the hit/miss tally had already counted them. MAX_HAND is
+     the bound now: a valid hand never exceeds it, and an invalid one (this runs
+     on the error path too) can't spin up a runaway number of nodes. */
   function renderHand(cards) {
-    var size = Math.min(state ? state.hand : 5, 12);
+    var size = Math.min(state ? state.hand : 5, MAX_HAND);
     var html = '';
     for (var i = 0; i < size; i++) {
       if (cards && cards[i]) {
@@ -490,6 +513,7 @@
         html += '<span class="hand-card"></span>';
       }
     }
+    el['hand-strip'].classList.toggle('tight', size > 24);
     el['hand-strip'].innerHTML = html;
   }
 
