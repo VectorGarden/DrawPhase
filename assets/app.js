@@ -10,6 +10,8 @@
   var THEME_KEY = 'drawphase.theme';
   var STATE_KEY = 'drawphase.state';
   var MAX_GROUPS = 12;
+  var MAX_DECK = 200;   /* matches the max= on #deck-size */
+  var MAX_HAND = 60;    /* matches the max= on #hand-size */
   var SPINES = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6'];
 
   var DEFAULTS = {
@@ -129,12 +131,25 @@
     return Number(num * SCALE / den) / 1e12;
   }
 
-  /* Number of hands that satisfy every group at once. */
+  /* Number of hands that satisfy every group at once.
+
+     The tail of the walk depends only on which group we are on and how many
+     cards are already spoken for, never on the product carried into it, so the
+     factor is pulled out and each (group, drawn) pair is computed once. Without
+     that the walk visits every combination in turn — roughly fourteen times more
+     work per group added, which locks the tab up somewhere around eight groups
+     on a large hand. Memoised it is a few hundred states at worst. */
   function countPassingHands(groups, rest, hand) {
-    function walk(i, drawn, product) {
+    var memo = [];
+    for (var m = 0; m < groups.length; m++) memo.push(Object.create(null));
+
+    function walk(i, drawn) {
       if (i === groups.length) {
-        return product * comb(rest, hand - drawn);
+        return comb(rest, hand - drawn);
       }
+      var cached = memo[i][drawn];
+      if (cached !== undefined) return cached;
+
       var g = groups[i];
       var lo = Math.max(0, g.min);
       var hi = Math.min(g.max, g.amt, hand - drawn);
@@ -142,11 +157,12 @@
       for (var k = lo; k <= hi; k++) {
         var c = comb(g.amt, k);
         if (c === 0n) continue;
-        total += walk(i + 1, drawn + k, product * c);
+        total += c * walk(i + 1, drawn + k);
       }
+      memo[i][drawn] = total;
       return total;
     }
-    return walk(0, 0, 1n);
+    return walk(0, 0);
   }
 
   /* P(exactly k copies of one group), k = 0 .. min(amt, hand) */
@@ -214,7 +230,15 @@
       problems.push('You need to draw at least one card.');
       flags.hand = true;
     }
-    if (s.deck >= 1 && s.hand > s.deck) {
+    if (s.deck > MAX_DECK) {
+      problems.push('This tops out at a ' + MAX_DECK + ' card deck.');
+      flags.deck = true;
+    }
+    if (s.hand > MAX_HAND) {
+      problems.push('This tops out at ' + MAX_HAND + ' cards drawn.');
+      flags.hand = true;
+    }
+    if (s.deck >= 1 && s.deck <= MAX_DECK && s.hand > s.deck) {
       problems.push('You are drawing ' + s.hand + ' cards from a deck of ' + s.deck + '.');
       flags.hand = true;
     }
@@ -271,11 +295,15 @@
   function plainLanguage(p) {
     if (p <= 0) return 'No hand in this deck can meet those requirements.';
     if (p >= 0.99995) return 'Every possible opening hand meets these requirements.';
+    /* Rounding reaches the ends of the scale long before p does, and both
+       "20 of every 20" beside a miss rate and "1 in 900 — near 0 of every 20"
+       read as contradictions. */
     var inTwenty = Math.round(p * 20);
     if (p >= 0.5) {
-      return 'You open it in <strong>' + inTwenty + ' of every 20 duels</strong>, and miss roughly 1 hand in ' + trim(1 / (1 - p)) + '.';
+      return 'You open it in <strong>' + Math.min(19, inTwenty) + ' of every 20 duels</strong>, and miss roughly 1 hand in ' + trim(1 / (1 - p)) + '.';
     }
-    return 'About <strong>1 in ' + trim(1 / p) + '</strong> opening hands — near ' + inTwenty + ' of every 20 duels.';
+    var line = 'About <strong>1 in ' + trim(1 / p) + '</strong> opening hands';
+    return inTwenty > 0 ? line + ' — near ' + inTwenty + ' of every 20 duels.' : line + '.';
   }
 
   var animFrame = null;
