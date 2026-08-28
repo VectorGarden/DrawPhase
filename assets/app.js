@@ -265,6 +265,15 @@
     return { ok: problems.length === 0, problems: problems, flags: flags, assigned: assigned, required: required };
   }
 
+  /* One pass, driven by the state we just read, so a rename is reflected the
+     moment it is typed. */
+  function nameGroups() {
+    Array.prototype.forEach.call(el.groups.querySelectorAll('.group'), function (node, i) {
+      var body = node.querySelector('.group-body');
+      if (body && state.groups[i]) body.setAttribute('aria-label', groupLabel(state.groups[i], i));
+    });
+  }
+
   function paintFlags(check) {
     el['deck-size'].classList.toggle('invalid', check.flags.deck);
     el['hand-size'].classList.toggle('invalid', check.flags.hand);
@@ -317,7 +326,11 @@
 
   function animateNumber(from, to) {
     stopAnimation();
-    if (reduceMotion || Math.abs(to - from) < 0.01) {
+    /* requestAnimationFrame does not fire while the tab is hidden, so the
+       headline sat on a stale figure — bar and prose already updated — until
+       something brought the tab to the front. Opening a shared link in a
+       background tab is the ordinary way to hit that. */
+    if (reduceMotion || document.hidden || Math.abs(to - from) < 0.01) {
       el['odds-value'].textContent = to.toFixed(2);
       return;
     }
@@ -336,6 +349,9 @@
      Rendering the groups
      ====================================================================== */
 
+  var FIELDS = ['.g-name', '.g-amt', '.g-min', '.g-max'];
+  var groupSeq = 0;
+
   function buildGroup(data, index) {
     var node = el['group-template'].content.firstElementChild.cloneNode(true);
     node.style.setProperty('--spine', spineFor(index));
@@ -343,6 +359,22 @@
     node.querySelector('.g-amt').value = data.amt;
     node.querySelector('.g-min').value = data.min;
     node.querySelector('.g-max').value = data.max;
+
+    /* The template's labels carry no `for`, and the group rows are clones, so
+       there is no id to point at until one is minted here. Without this every
+       field falls back to its own value for a name — a screen reader reads the
+       row as "12, edit / 1, edit / 5, edit", and both name fields announce as
+       "Starters" off the shared placeholder. */
+    var uid = 'grp' + (++groupSeq);
+    FIELDS.forEach(function (sel) {
+      var input = node.querySelector(sel);
+      var label = input.parentNode.querySelector('label');
+      input.id = uid + sel.replace('.g-', '-');
+      if (label) label.setAttribute('for', input.id);
+    });
+    /* Named on the body rather than the <li> so the list keeps its item
+       semantics; it tells you which group the four fields belong to. */
+    node.querySelector('.group-body').setAttribute('role', 'group');
 
     node.querySelector('.btn-remove').addEventListener('click', function () {
       node.remove();
@@ -377,6 +409,7 @@
 
     var check = validate(state);
     paintFlags(check);
+    nameGroups();
 
     var rest = state.deck - check.assigned;
     var restMax = state.hand - check.required;
@@ -626,7 +659,12 @@
 
   function summaryText() {
     var lines = [];
-    lines.push('Opening hand odds — ' + el['odds-value'].textContent + '%');
+    /* Read the computed figure, not the headline element: that text is a
+       tween for 300ms after every edit, and it is the placeholder dash
+       whenever the setup does not add up. */
+    lines.push(oddsCard.classList.contains('is-error')
+      ? 'Opening hand odds — this setup does not add up yet.'
+      : 'Opening hand odds — ' + lastShown.toFixed(2) + '%');
     lines.push('Deck of ' + state.deck + ', drawing ' + state.hand + '.');
     state.groups.forEach(function (g, i) {
       lines.push('• ' + groupLabel(g, i) + ': ' + g.amt + ' in deck, want ' + g.min + '–' + g.max + ' in hand.');
