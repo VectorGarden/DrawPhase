@@ -12,6 +12,7 @@
   var MAX_GROUPS = 12;
   var MAX_DECK = 200;   /* matches the max= on #deck-size */
   var MAX_HAND = 60;    /* matches the max= on #hand-size */
+  var NAME_MAX = 30;    /* matches the maxlength= on a group name */
   var SPINES = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6'];
 
   var DEFAULTS = {
@@ -624,19 +625,43 @@
     return btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
+  /* Every setup that reaches the form comes through here, from a link or from
+     storage alike. The link was the only guarded path before, which left the
+     stored copy to walk unchecked into buildGroup: one null group threw, and
+     because init() wires its listeners after loadState, the page came up inert
+     with no way back — typing did nothing, and "Start over" was dead too, on
+     that reload and every one after it. */
+  function normaliseState(raw) {
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.groups)) return null;
+    return {
+      deck: toInt(raw.deck),
+      hand: toInt(raw.hand),
+      groups: raw.groups.slice(0, MAX_GROUPS).map(function (g) {
+        if (!g || typeof g !== 'object') g = {};
+        return {
+          name: typeof g.name === 'string' ? g.name.slice(0, NAME_MAX) : '',
+          amt: toInt(g.amt),
+          min: toInt(g.min),
+          max: toInt(g.max)
+        };
+      })
+    };
+  }
+
   function decodeState(token) {
     try {
       var b64 = token.replace(/-/g, '+').replace(/_/g, '/');
       while (b64.length % 4) b64 += '=';
       var parsed = JSON.parse(decodeURIComponent(escape(atob(b64))));
       if (!parsed || !Array.isArray(parsed.g)) return null;
-      return {
-        deck: toInt(parsed.d),
-        hand: toInt(parsed.h),
-        groups: parsed.g.slice(0, MAX_GROUPS).map(function (g) {
-          return { name: String(g[0] || '').slice(0, 30), amt: toInt(g[1]), min: toInt(g[2]), max: toInt(g[3]) };
+      return normaliseState({
+        deck: parsed.d,
+        hand: parsed.h,
+        groups: parsed.g.map(function (g) {
+          if (!Array.isArray(g)) g = [];
+          return { name: g[0], amt: g[1], min: g[2], max: g[3] };
         })
-      };
+      });
     } catch (e) { return null; }
   }
 
@@ -712,13 +737,21 @@
     if (hash.indexOf('#d=') === 0) initial = decodeState(hash.slice(3));
     if (!initial) {
       var stored = readStore(STATE_KEY);
-      if (stored) { try { initial = JSON.parse(stored); } catch (e) { initial = null; } }
+      if (stored) {
+        try { initial = normaliseState(JSON.parse(stored)); } catch (e) { initial = null; }
+      }
     }
-    if (!initial || typeof initial.deck !== 'number' || !Array.isArray(initial.groups)) {
-      initial = DEFAULTS;
-    }
+    if (!initial) initial = DEFAULTS;
 
-    loadState(initial);
+    /* Every listener below this line is attached after loadState, so a setup
+       that throws here would cost the page its wiring entirely. Falling back
+       is worth more than honouring a setup we cannot render; the defaults get
+       saved over the bad value on the way through, so it does not come back. */
+    try {
+      loadState(initial);
+    } catch (e) {
+      loadState(DEFAULTS);
+    }
 
     /* Any edit anywhere in the form recalculates */
     document.addEventListener('input', function (e) {
