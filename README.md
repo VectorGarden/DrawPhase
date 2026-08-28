@@ -74,9 +74,6 @@ take up to an hour after DNS resolves; the checkbox stays greyed out until then.
 
 - `CNAME` — the custom domain. One line, no protocol, no trailing slash. Kept
   in the published artifact so the domain survives a deploy.
-- `.nojekyll` — stops Pages running the files through Jekyll. Only branch
-  deploys do that, so this is no longer needed and is not published; it stays
-  in the repository in case the source is ever switched back.
 - `404.html` — Pages serves this for any missing path. Its styles are inlined
   on purpose, because it can be served from any URL depth and relative links
   would break.
