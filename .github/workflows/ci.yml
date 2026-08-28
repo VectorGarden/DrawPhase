@@ -27,6 +27,9 @@ jobs:
       - name: Check the odds
         run: node test/odds.test.js
 
+      - name: Check the dealt hand
+        run: node test/deal.test.js
+
       - name: Check the scripts parse
         run: |
           node --check assets/math.js

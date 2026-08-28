@@ -118,6 +118,7 @@ loaded outside a browser and checked:
 
 ```bash
 node test/odds.test.js
+node test/deal.test.js
 ```
 
 No dependencies and no test framework, same as the rest of the repo. A wrong
@@ -128,6 +129,15 @@ counts the ones that pass, with no binomial coefficients involved. The rest
 covers values worked out by hand, invariants that must hold for any input, and
 a ceiling on how long the twelve-group worst case may take, which is what
 stops the memoisation quietly regressing.
+
+`deal.test.js` does the same job for "Deal a test hand". A biased shuffle
+would not look broken — the hands would stay plausible and the tally would
+still converge, just on the wrong figure, leaving the page apparently
+disagreeing with its own arithmetic. So the sample is compared against the
+exact distribution with a chi-square over every possible hand composition,
+from a seeded generator so the result is fixed rather than merely likely. Its
+last section runs three broken shuffles through the identical check and
+insists they are rejected, so the test re-earns its power on every run.
 
 GitHub Actions runs it on every push and pull request. Deployment is still
 just Pages serving the branch; nothing about publishing depends on it.

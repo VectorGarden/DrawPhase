@@ -87,10 +87,39 @@
     return out;
   }
 
+  /* One hand drawn from a pile of group tags, -1 standing for everything else.
+
+     Partial Fisher-Yates: at each step the card at i is swapped in from a
+     uniform pick over the cards not yet taken, which makes the first `hand`
+     entries a uniform sample without replacement. `random` is injectable so a
+     test can drive it deterministically; deal() passes Math.random.
+
+     The loop guards on i < pile.length as well as the hand size. The version
+     this came from guarded on the pile merely being non-empty, which would
+     have pushed undefined for every card past the end of the deck had a hand
+     larger than the deck ever reached it. Validation stops that today, so it
+     was latent rather than live, but the bound belongs here. */
+  function drawHand(groups, rest, hand, random) {
+    var pile = [];
+    for (var g = 0; g < groups.length; g++) {
+      for (var n = 0; n < groups[g]; n++) pile.push(g);
+    }
+    for (var r = 0; r < rest; r++) pile.push(-1);
+
+    var drawn = [];
+    for (var i = 0; i < hand && i < pile.length; i++) {
+      var j = i + Math.floor(random() * (pile.length - i));
+      var tmp = pile[i]; pile[i] = pile[j]; pile[j] = tmp;
+      drawn.push(pile[i]);
+    }
+    return drawn;
+  }
+
   return {
     comb: comb,
     ratio: ratio,
     countPassingHands: countPassingHands,
-    distribution: distribution
+    distribution: distribution,
+    drawHand: drawHand
   };
 });
