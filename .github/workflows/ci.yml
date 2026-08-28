@@ -1,13 +1,15 @@
-# The site itself needs no build and no Actions run to deploy — Pages serves
-# the branch directly. This workflow exists for one reason: a wrong
-# probability looks exactly like a right one, so the odds get checked against
-# a straight enumeration of every possible hand before anything merges.
+# Tests on every push and pull request, and the deploy that follows them on
+# main. The tests come first for the reason they exist at all: a wrong
+# probability looks exactly like a right one, so the odds are checked against
+# a straight enumeration of every possible hand — and now nothing reaches the
+# live site until that check has passed.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,3 +36,52 @@ jobs:
         run: |
           node --check assets/math.js
           node --check assets/app.js
+
+  deploy:
+    name: Deploy to Pages
+    needs: odds
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    # Let a running deploy finish rather than cancelling it half published.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # Only the site. Deploying from the branch published the whole
+      # repository, so README.md, LICENSE.md and test/*.js were all being
+      # served from the live domain. Missing files fail the build rather than
+      # quietly publishing a site with a hole in it.
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          mkdir _site
+          for f in index.html 404.html favicon.ico site.webmanifest robots.txt sitemap.xml CNAME; do
+            test -f "$f" || { echo "::error::$f is missing from the repository"; exit 1; }
+            cp "$f" _site/
+          done
+          test -d assets || { echo "::error::assets/ is missing from the repository"; exit 1; }
+          cp -R assets _site/assets
+          echo "Publishing:"
+          find _site -type f | sort | sed 's/^/  /'
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

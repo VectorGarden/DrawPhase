@@ -29,12 +29,12 @@ around it is new.
 
 ## Deploying to GitHub Pages
 
-Everything is static — no build step and no dependencies. There is an Actions
-workflow, but it only runs the tests; publishing is Pages serving the branch
-and does not depend on it.
+Everything is static — no build step and no dependencies. Publishing is done
+by `.github/workflows/ci.yml`, which deploys to Pages after the tests pass on
+`main`. Nothing reaches the live site that has not been checked first.
 
 **1. Push the files.** Put the contents of this folder at the *root* of the
-branch you publish from (`main` or `gh-pages`), not inside a subfolder:
+branch you publish from, not inside a subfolder:
 
 ```
 index.html
@@ -44,12 +44,18 @@ site.webmanifest
 robots.txt
 sitemap.xml
 CNAME
-.nojekyll
 assets/
 ```
 
-**2. Turn on Pages.** Repo → Settings → Pages → Source: *Deploy from a branch*,
-then pick your branch and the `/ (root)` folder.
+The workflow copies exactly that list into the artifact it publishes, and
+fails if any of it is missing. Everything else in the repository — this file,
+the licence, `test/` — stays out of the artifact and off the live domain.
+Deploying from a branch used to publish the lot.
+
+**2. Turn on Pages.** Repo → Settings → Pages → Source: *GitHub Actions*.
+There is no branch or folder to pick; the workflow decides what ships. Leave
+the custom domain set to `calc.reizu.dev` — it lives in this setting, and
+`CNAME` travels in the artifact to match.
 
 **3. Set the custom domain.** In the same screen, enter `calc.reizu.dev` and
 save. GitHub reads the `CNAME` file already included here, so this should match
@@ -66,8 +72,11 @@ take up to an hour after DNS resolves; the checkbox stays greyed out until then.
 
 ### Files that matter for hosting
 
-- `CNAME` — the custom domain. One line, no protocol, no trailing slash.
-- `.nojekyll` — stops Pages running the files through Jekyll.
+- `CNAME` — the custom domain. One line, no protocol, no trailing slash. Kept
+  in the published artifact so the domain survives a deploy.
+- `.nojekyll` — stops Pages running the files through Jekyll. Only branch
+  deploys do that, so this is no longer needed and is not published; it stays
+  in the repository in case the source is ever switched back.
 - `404.html` — Pages serves this for any missing path. Its styles are inlined
   on purpose, because it can be served from any URL depth and relative links
   would break.
@@ -139,8 +148,9 @@ from a seeded generator so the result is fixed rather than merely likely. Its
 last section runs three broken shuffles through the identical check and
 insists they are rejected, so the test re-earns its power on every run.
 
-GitHub Actions runs it on every push and pull request. Deployment is still
-just Pages serving the branch; nothing about publishing depends on it.
+GitHub Actions runs both suites on every push and pull request, and the
+deploy job on `main` waits for them. A failing check means the live site keeps
+the last good version rather than taking the new one.
 
 ## How the maths works
 
