@@ -117,6 +117,7 @@
   var ratio = maths.ratio;
   var countPassingHands = maths.countPassingHands;
   var distribution = maths.distribution;
+  var drawHand = maths.drawHand;
 
   /* ======================================================================
      Reading the form
@@ -562,20 +563,13 @@
   function deal() {
     if (oddsCard.classList.contains('is-error')) return;
 
-    var pile = [];
-    state.groups.forEach(function (g, i) {
-      for (var n = 0; n < g.amt; n++) pile.push(i);
-    });
     var rest = state.deck - state.groups.reduce(function (sum, g) { return sum + g.amt; }, 0);
-    for (var n = 0; n < rest; n++) pile.push(-1);
-
-    /* Partial Fisher-Yates: only the cards we actually draw */
-    var drawn = [];
-    for (var i = 0; i < state.hand && pile.length; i++) {
-      var j = i + Math.floor(Math.random() * (pile.length - i));
-      var tmp = pile[i]; pile[i] = pile[j]; pile[j] = tmp;
-      drawn.push(pile[i]);
-    }
+    var drawn = drawHand(
+      state.groups.map(function (g) { return g.amt; }),
+      rest,
+      state.hand,
+      Math.random
+    );
 
     var counts = state.groups.map(function () { return 0; });
     drawn.forEach(function (g) { if (g >= 0) counts[g]++; });
