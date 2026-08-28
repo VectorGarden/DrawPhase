@@ -51,7 +51,8 @@
   ['deck-size', 'hand-size', 'groups', 'rest-amt', 'rest-max', 'add-group', 'reset',
    'odds-value', 'odds-figure', 'odds-fill', 'odds-plain', 'hand-strip', 'deal',
    'deal-tally', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
-   'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template']
+   'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template',
+   'group-status']
     .forEach(function (id) {
       el[id] = document.getElementById(id);
     });
@@ -317,11 +318,34 @@
     node.querySelector('.group-body').setAttribute('role', 'group');
 
     node.querySelector('.btn-remove').addEventListener('click', function () {
+      /* Work out where to land before the node goes: removing it drops focus
+         to the body, and the next Tab then restarts from the top of the
+         document, which loses a keyboard user their place entirely. */
+      var rows = Array.prototype.slice.call(el.groups.querySelectorAll('.group'));
+      var at = rows.indexOf(node);
+      var neighbour = rows[at + 1] || rows[at - 1];
+
       node.remove();
       renumber();
       update();
+
+      /* The neighbour's own remove button, unless removing left one group and
+         disabled it — then the button that is still worth pressing. */
+      var landing = neighbour && !neighbour.querySelector('.btn-remove').disabled
+        ? neighbour.querySelector('.btn-remove')
+        : (el['add-group'].disabled ? null : el['add-group']);
+      if (landing) landing.focus();
+
+      announce('Group removed.');
     });
     return node;
+  }
+
+  function announce(what) {
+    if (!el['group-status']) return;
+    var count = el.groups.querySelectorAll('.group').length;
+    el['group-status'].textContent = what + ' ' + count + (count === 1 ? ' group' : ' groups') +
+      (count >= MAX_GROUPS ? ', the maximum.' : '.');
   }
 
   function renumber() {
@@ -721,6 +745,7 @@
       var added = el.groups.lastElementChild.querySelector('.g-name');
       if (added) added.focus();
       update();
+      announce('Group added.');
     });
 
     el.reset.addEventListener('click', function () {

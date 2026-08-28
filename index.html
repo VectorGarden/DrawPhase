@@ -140,6 +140,10 @@
           </button>
           <button type="button" class="btn btn-quiet" id="reset">Start over</button>
         </div>
+
+        <!-- Adding or removing a group is a change of shape that is obvious on
+             screen and silent otherwise, so it gets announced. -->
+        <p class="sr-only" id="group-status" role="status" aria-live="polite"></p>
       </section>
 
       <section class="panel" aria-labelledby="examples-title">

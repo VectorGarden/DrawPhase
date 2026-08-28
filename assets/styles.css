@@ -71,6 +71,13 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute is only a UA-level `display: none`, and any author
+   `display` rule outranks it whatever the specificity says. `.examples` sets
+   `display: flex`, which left the worked-examples disclosure permanently open
+   while its toggle went on reporting aria-expanded="false". Guard the
+   attribute once here rather than per component. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
