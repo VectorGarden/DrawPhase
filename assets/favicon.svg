@@ -1,9 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Fanned cards">
-  <rect width="64" height="64" rx="14" fill="#12151F"/>
-  <g transform="translate(32 41.5) scale(1.333)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Draw Phase">
+  <g transform="translate(32.000 43.263) scale(1.5801)">
     <rect x="-10.5" y="-24" width="21" height="32" rx="4" fill="#35C0AE" transform="rotate(-27)"/>
     <rect x="-10.5" y="-24" width="21" height="32" rx="4" fill="#9A88F2" transform="rotate(27)"/>
     <rect x="-10.5" y="-24" width="21" height="32" rx="4" fill="#E9A93C"/>
-    <path d="M0 -15.6 L1.84 -9.84 L7.6 -8 L1.84 -6.16 L0 -0.4 L-1.84 -6.16 L-7.6 -8 L-1.84 -9.84 Z" fill="#12151F"/>
+    <path d="M0.00 -15.60 L1.84 -9.84 L7.60 -8.00 L1.84 -6.16 L0.00 -0.40 L-1.84 -6.16 L-7.60 -8.00 L-1.84 -9.84 Z" fill="#12151F"/>
   </g>
 </svg>
