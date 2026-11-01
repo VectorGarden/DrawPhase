@@ -80,6 +80,27 @@
   <div class="layout">
     <div class="col-build">
 
+      <!-- Comparing: two setups, A and B, with their odds side by side. The
+           form below edits whichever one is pressed here. -->
+      <section class="compare" id="compare" aria-label="Compare setups">
+        <button type="button" class="btn btn-ghost compare-start" id="compare-start">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><rect x="3.5" y="5" width="8" height="12" rx="1.6"/><rect x="12.5" y="7" width="8" height="12" rx="1.6"/></svg>
+          Compare with another setup
+        </button>
+        <div class="compare-tabs" id="compare-tabs" hidden>
+          <div class="compare-pair" role="group" aria-label="Setup being edited">
+            <button type="button" class="compare-tab" data-setup="0" aria-pressed="true">
+              <span class="ct-name">Setup A</span><span class="ct-odds">—</span>
+            </button>
+            <button type="button" class="compare-tab" data-setup="1" aria-pressed="false">
+              <span class="ct-name">Setup B</span><span class="ct-odds">—</span>
+            </button>
+          </div>
+          <p class="compare-delta" id="compare-delta"></p>
+          <button type="button" class="btn btn-quiet compare-stop" id="compare-stop">Keep only A</button>
+        </div>
+      </section>
+
       <section class="panel" id="deck-setup" aria-labelledby="deck-setup-title">
         <div class="panel-head">
           <h2 id="deck-setup-title">Your deck</h2>
@@ -190,7 +211,7 @@
 
     <aside class="col-odds">
       <div class="odds-card">
-        <p class="eyebrow">Chance to open this hand</p>
+        <p class="eyebrow" id="odds-eyebrow">Chance to open this hand</p>
 
         <p class="odds-figure" id="odds-figure">
           <span id="odds-value">—</span><span class="odds-pct">%</span>
@@ -268,6 +289,7 @@
 </template>
 
 <script src="./assets/math.js"></script>
+<script src="./assets/share.js"></script>
 <script src="./assets/app.js"></script>
 </body>
 </html>

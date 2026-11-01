@@ -26,3 +26,38 @@ interface DrawPhaseMathApi {
 }
 
 declare var DrawPhaseMath: DrawPhaseMathApi;
+
+/* A whole setup as the page holds it: the deck, the hand, and each group
+   with its name. Shared by app.js and share.js. */
+interface Group {
+  name: string;
+  amt: number;
+  min: number;
+  max: number;
+}
+
+interface Setup {
+  deck: number;
+  hand: number;
+  groups: Group[];
+}
+
+/* What is kept in local storage: one setup, or two being compared, and which
+   of them was on screen. */
+interface Stored {
+  setups: Setup[];
+  active: number;
+}
+
+/* What share.js hands to the page, and to the tests in Node. */
+interface DrawPhaseShareApi {
+  MAX_GROUPS: number;
+  toInt(value: unknown): number;
+  normaliseSetup(raw: unknown): Setup | null;
+  encodeLink(setups: Setup[]): string;
+  decodeLink(token: string): Setup[] | null;
+  toStored(setups: Setup[], active: number): Stored;
+  fromStored(raw: unknown): Stored | null;
+}
+
+declare var DrawPhaseShare: DrawPhaseShareApi;

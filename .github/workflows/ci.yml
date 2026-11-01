@@ -32,9 +32,13 @@ jobs:
       - name: Check the dealt hand
         run: node test/deal.test.js
 
+      - name: Check share links and storage
+        run: node test/share.test.js
+
       - name: Check the scripts parse
         run: |
           node --check assets/math.js
+          node --check assets/share.js
           node --check assets/app.js
 
       # The scripts are plain JavaScript with JSDoc types; tsc checks them
