@@ -35,32 +35,28 @@
   var LETTERS = ['A', 'B'];
   var SPINES = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6'];
 
-  /** @type {Setup} */
-  var DEFAULTS = {
-    deck: 40,
-    hand: 5,
-    groups: [
-      { name: 'Starters', amt: 12, min: 1, max: 5 },
-      { name: 'Hand traps', amt: 9, min: 1, max: 5 }
-    ]
-  };
+  /* A one-line setup from rows of [name, in deck, min, max]. */
+  /**
+   * @param {number} deck
+   * @param {number} hand
+   * @param {[string, number, number, number][]} rows
+   * @returns {Setup}
+   */
+  function make(deck, hand, rows) {
+    return {
+      deck: deck,
+      hand: hand,
+      groups: rows.map(function (r) { return { name: r[0], amt: r[1] }; }),
+      lines: [rows.map(function (r) { return { min: r[2], max: r[3] }; })]
+    };
+  }
+
+  var DEFAULTS = make(40, 5, [['Starters', 12, 1, 5], ['Hand traps', 9, 1, 5]]);
 
   /** @type {Record<string, Setup>} */
   var EXAMPLES = {
-    allure: {
-      deck: 40, hand: 5,
-      groups: [
-        { name: 'Allure of Darkness', amt: 1, min: 1, max: 1 },
-        { name: 'DARK monsters', amt: 10, min: 1, max: 4 }
-      ]
-    },
-    ravine: {
-      deck: 40, hand: 5,
-      groups: [
-        { name: 'Ravine + Terraforming', amt: 5, min: 1, max: 5 },
-        { name: 'Dux or Phalanx', amt: 6, min: 1, max: 5 }
-      ]
-    }
+    allure: make(40, 5, [['Allure of Darkness', 1, 1, 1], ['DARK monsters', 10, 1, 4]]),
+    ravine: make(40, 5, [['Ravine + Terraforming', 5, 1, 5], ['Dux or Phalanx', 6, 1, 5]])
   };
 
   /* Replaced by the first update(), and by every one after it. Starting on
@@ -74,6 +70,8 @@
   /** @type {Setup[]} */
   var setups = [DEFAULTS];
   var active = 0;
+  /* Which either/or line the Min and Max columns are showing. */
+  var activeLine = 0;
   var lastShown = 0;
   /** @type {string | null} */
   var lastSignature = null;
@@ -102,7 +100,9 @@
    *   'group-template': HTMLTemplateElement, 'group-status': HTMLElement | null,
    *   'odds-eyebrow': HTMLElement, compare: HTMLElement,
    *   'compare-start': HTMLButtonElement, 'compare-tabs': HTMLElement,
-   *   'compare-delta': HTMLElement, 'compare-stop': HTMLButtonElement
+   *   'compare-delta': HTMLElement, 'compare-stop': HTMLButtonElement,
+   *   'lines-bar': HTMLElement, 'lines-tabs': HTMLElement, 'lines-note': HTMLElement,
+   *   'remove-line': HTMLButtonElement, 'add-line': HTMLButtonElement
    * }} Elements
    */
 
@@ -115,7 +115,8 @@
     'draw-extra', 'deal-tally', 'deal-extra', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
     'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template',
     'group-status', 'odds-eyebrow', 'compare', 'compare-start', 'compare-tabs',
-    'compare-delta', 'compare-stop'
+    'compare-delta', 'compare-stop', 'lines-bar', 'lines-tabs', 'lines-note',
+    'remove-line', 'add-line'
   ]).forEach(function (id) {
     found[id] = document.getElementById(id);
   });
@@ -214,6 +215,7 @@
   var comb = maths.comb;
   var ratio = maths.ratio;
   var countPassingHands = maths.countPassingHands;
+  var countPassingAny = maths.countPassingAny;
   var distribution = maths.distribution;
   var drawHand = maths.drawHand;
 
@@ -222,27 +224,51 @@
   var share = window.DrawPhaseShare;
   var toInt = share.toInt;
   var MAX_GROUPS = share.MAX_GROUPS;
+  var MAX_LINES = share.MAX_LINES;
 
   /* ======================================================================
      Reading the form
      ====================================================================== */
 
+  /* Each group row keeps its needs for every line, whichever one its Min
+     and Max fields happen to be showing. Held against the row itself, so a
+     group added or removed takes its needs with it and the lines can never
+     fall out of step with the groups. */
+  /** @type {WeakMap<Element, Need[]>} */
+  var needsByRow = new WeakMap();
+
+  /** @param {Element} node */
+  function needsOf(node) {
+    return /** @type {Need[]} */ (needsByRow.get(node));
+  }
+
+  /* The fields on screen are the current line; the rows' stored needs are
+     the others. Writing the fields back first keeps the two the same. */
   /** @returns {Setup} */
   function readState() {
     /** @type {Group[]} */
     var groups = [];
+    /** @type {Need[][]} */
+    var lines = [];
     all(el.groups, '.group').forEach(function (node) {
       groups.push({
         name: field(node, '.g-name').value,
-        amt: toInt(field(node, '.g-amt').value),
+        amt: toInt(field(node, '.g-amt').value)
+      });
+      var needs = needsOf(node);
+      needs[activeLine] = {
         min: toInt(field(node, '.g-min').value),
         max: toInt(field(node, '.g-max').value)
+      };
+      needs.forEach(function (n, l) {
+        (lines[l] = lines[l] || []).push({ min: n.min, max: n.max });
       });
     });
     return {
       deck: toInt(el['deck-size'].value),
       hand: toInt(el['hand-size'].value),
-      groups: groups
+      groups: groups,
+      lines: lines.length ? lines : [[]]
     };
   }
 
@@ -274,8 +300,12 @@
     var flags = { deck: false, hand: false, groups: [] };
     s.groups.forEach(function () { flags.groups.push({ amt: false, min: false, max: false }); });
 
+    /* Only the line on screen can show red fields, so its problems come
+       first; another line's are still reported, by name. A setup being
+       compared but not on screen may have fewer lines, hence the fallback. */
+    var shown = activeLine < s.lines.length ? activeLine : 0;
     var assigned = s.groups.reduce(function (sum, g) { return sum + g.amt; }, 0);
-    var required = s.groups.reduce(function (sum, g) { return sum + g.min; }, 0);
+    var required = s.lines[shown].reduce(function (sum, n) { return sum + n.min; }, 0);
 
     if (s.deck < 1) {
       problems.push('Set a deck size to get started.');
@@ -301,21 +331,30 @@
       problems.push('Your groups add up to ' + assigned + ' cards, but the deck only holds ' + s.deck + '.');
       s.groups.forEach(function (g, i) { if (g.amt > 0) flags.groups[i].amt = true; });
     }
-    s.groups.forEach(function (g, i) {
-      if (g.min > g.max) {
-        problems.push('“' + escapeHtml(groupLabel(g, i)) + '” asks for at least ' + g.min + ' but no more than ' + g.max + '.');
-        flags.groups[i].min = true;
-        flags.groups[i].max = true;
-      }
-      if (g.min > g.amt) {
-        problems.push('“' + escapeHtml(groupLabel(g, i)) + '” asks for ' + g.min + ' cards but only ' + g.amt + ' are in the deck.');
-        flags.groups[i].min = true;
+    var order = [shown];
+    s.lines.forEach(function (_, l) { if (l !== shown) order.push(l); });
+    order.forEach(function (l) {
+      var line = s.lines[l];
+      var on = l === shown;
+      var prefix = s.lines.length > 1 ? 'Line ' + (l + 1) + ': ' : '';
+      var asked = 0;
+      s.groups.forEach(function (g, i) {
+        var n = line[i];
+        asked += n.min;
+        if (n.min > n.max) {
+          problems.push(prefix + '“' + escapeHtml(groupLabel(g, i)) + '” asks for at least ' + n.min + ' but no more than ' + n.max + '.');
+          if (on) { flags.groups[i].min = true; flags.groups[i].max = true; }
+        }
+        if (n.min > g.amt) {
+          problems.push(prefix + '“' + escapeHtml(groupLabel(g, i)) + '” asks for ' + n.min + ' cards but only ' + g.amt + ' are in the deck.');
+          if (on) flags.groups[i].min = true;
+        }
+      });
+      if (asked > s.hand && s.hand >= 1) {
+        problems.push(prefix + 'You are asking for ' + asked + ' specific cards but only drawing ' + s.hand + '.');
+        if (on) line.forEach(function (n, i) { if (n.min > 0) flags.groups[i].min = true; });
       }
     });
-    if (required > s.hand && s.hand >= 1) {
-      problems.push('You are asking for ' + required + ' specific cards but only drawing ' + s.hand + '.');
-      s.groups.forEach(function (g, i) { if (g.min > 0) flags.groups[i].min = true; });
-    }
 
     return { ok: problems.length === 0, problems: problems, flags: flags, assigned: assigned, required: required };
   }
@@ -419,16 +458,17 @@
 
   /**
    * @param {Group} data
+   * @param {Need[]} needs   one per line
    * @param {number} index
    */
-  function buildGroup(data, index) {
+  function buildGroup(data, needs, index) {
     var node = /** @type {HTMLLIElement} */ (
       /** @type {Element} */ (el['group-template'].content.firstElementChild).cloneNode(true));
     node.style.setProperty('--spine', spineFor(index));
     field(node, '.g-name').value = data.name || '';
     field(node, '.g-amt').value = String(data.amt);
-    field(node, '.g-min').value = String(data.min);
-    field(node, '.g-max').value = String(data.max);
+    needsByRow.set(node, needs.map(function (n) { return { min: n.min, max: n.max }; }));
+    fillNeeds(node);
 
     /* The template's labels carry no `for`, and the group rows are clones, so
        there is no id to point at until one is minted here. Without this every
@@ -487,24 +527,113 @@
     el['add-group'].disabled = nodes.length >= MAX_GROUPS;
   }
 
-  /** @param {Group[]} groups */
-  function renderGroups(groups) {
+  /** @param {Setup} s */
+  function renderGroups(s) {
     el.groups.innerHTML = '';
-    groups.forEach(function (g, i) { el.groups.appendChild(buildGroup(g, i)); });
+    s.groups.forEach(function (g, i) {
+      el.groups.appendChild(buildGroup(g, s.lines.map(function (line) { return line[i]; }), i));
+    });
     renumber();
+  }
+
+  /* Put the current line's needs into a row's Min and Max. */
+  /** @param {Element} node */
+  function fillNeeds(node) {
+    var need = needsOf(node)[activeLine];
+    field(node, '.g-min').value = String(need.min);
+    field(node, '.g-max').value = String(need.max);
+  }
+
+  /* ======================================================================
+     Either/or lines
+     ====================================================================== */
+
+  /* The bar only appears once there is a second line to choose between. The
+     buttons are rebuilt only when the number of lines changes, so pressing
+     one keeps focus on it rather than on a fresh copy. */
+  function renderLines() {
+    var count = state.lines.length;
+    var many = count > 1;
+    el['lines-bar'].hidden = !many;
+    el['add-line'].hidden = count >= MAX_LINES;
+    if (!many) return;
+
+    var tabs = all(el['lines-tabs'], '.line-tab');
+    if (tabs.length !== count) {
+      var html = '';
+      for (var l = 0; l < count; l++) {
+        html += '<button type="button" class="line-tab" data-line="' + l + '">Line ' + (l + 1) + '</button>';
+      }
+      el['lines-tabs'].innerHTML = html;
+      tabs = all(el['lines-tabs'], '.line-tab');
+    }
+    tabs.forEach(function (tab, l) { tab.setAttribute('aria-pressed', String(l === activeLine)); });
+    el['remove-line'].textContent = 'Remove line ' + (activeLine + 1);
+    el['lines-note'].textContent = 'A hand opens if it meets any one line. Min and Max below are line ' +
+      (activeLine + 1) + '.';
+  }
+
+  /** @param {number} l */
+  function showLine(l) {
+    if (l === activeLine || l >= state.lines.length) return;
+    activeLine = l;
+    all(el.groups, '.group').forEach(fillNeeds);
+    update();
+  }
+
+  /* A new line starts as a copy of the one on screen, which is nearly always
+     the place to start: the same combo, reached a different way. */
+  function addLine() {
+    if (state.lines.length >= MAX_LINES) return;
+    var from = activeLine;
+    all(el.groups, '.group').forEach(function (node) {
+      var needs = needsOf(node);
+      needs.push({ min: needs[from].min, max: needs[from].max });
+    });
+    activeLine = state.lines.length;
+    all(el.groups, '.group').forEach(fillNeeds);
+    update();
+    var tab = el['lines-tabs'].querySelector('[data-line="' + activeLine + '"]');
+    if (tab instanceof HTMLElement) tab.focus();
+    say('Added line ' + (activeLine + 1) + ', a copy of line ' + (from + 1) + '. A hand opens if it meets any one line.');
+  }
+
+  function removeLine() {
+    if (state.lines.length < 2) return;
+    var gone = activeLine;
+    all(el.groups, '.group').forEach(function (node) { needsOf(node).splice(gone, 1); });
+    activeLine = Math.max(0, gone - 1);
+    all(el.groups, '.group').forEach(fillNeeds);
+    update();
+    var landing = el['lines-bar'].hidden
+      ? el['add-line']
+      : el['lines-tabs'].querySelector('[data-line="' + activeLine + '"]');
+    if (landing instanceof HTMLElement) landing.focus();
+    say('Removed line ' + (gone + 1) + '.' + (state.lines.length > 1 ? ' Now showing line ' + (activeLine + 1) + '.' : ''));
   }
 
   /* ======================================================================
      The main update pass
      ====================================================================== */
 
-  /* What the maths needs from a setup. A maximum is capped by the copies
-     there are and by the hand, since neither can be exceeded anyway. */
-  /** @param {Setup} s */
-  function requirements(s) {
-    return s.groups.map(function (g) {
-      return { amt: g.amt, min: g.min, max: Math.min(g.max, g.amt, s.hand) };
+  /* What the maths needs from a setup: every line, with each maximum capped
+     by the copies there are and by the hand, since neither can be exceeded
+     anyway. */
+  /**
+   * @param {Setup} s
+   * @returns {Need[][]}
+   */
+  function capped(s) {
+    return s.lines.map(function (line) {
+      return line.map(function (n, i) {
+        return { min: n.min, max: Math.min(n.max, s.groups[i].amt, s.hand) };
+      });
     });
+  }
+
+  /** @param {Setup} s */
+  function amtsOf(s) {
+    return s.groups.map(function (g) { return g.amt; });
   }
 
   /* The chance a setup opens, or null when it does not add up. */
@@ -515,7 +644,7 @@
   function oddsOf(s) {
     var check = validate(s);
     if (!check.ok) return null;
-    return ratio(countPassingHands(requirements(s), s.deck - check.assigned, s.hand), comb(s.deck, s.hand));
+    return ratio(countPassingAny(amtsOf(s), capped(s), s.deck - check.assigned, s.hand), comb(s.deck, s.hand));
   }
 
   function update() {
@@ -550,6 +679,7 @@
       el['breakdown'].innerHTML = '';
       clearDeal();
       lastShown = 0;
+      renderLines();
       renderCompare(null);
       save();
       return;
@@ -557,9 +687,9 @@
 
     oddsCard.classList.remove('is-error');
 
-    var groups = requirements(state);
+    var lines = capped(state);
 
-    var passing = countPassingHands(groups, rest, state.hand);
+    var passing = countPassingAny(amtsOf(state), lines, rest, state.hand);
     var p = ratio(passing, comb(state.deck, state.hand));
     var pct = p * 100;
 
@@ -572,8 +702,9 @@
     animateNumber(lastShown, pct);
     lastShown = pct;
 
-    renderBreakdown(state, groups);
+    renderBreakdown(state, lines, rest);
     clearDeal();
+    renderLines();
     renderCompare(p);
     save();
   }
@@ -688,14 +819,35 @@
 
   /**
    * @param {Setup} s
-   * @param {Requirement[]} groups
+   * @param {Need[][]} lines   capped, as the maths sees them
+   * @param {number} rest
    */
-  function renderBreakdown(s, groups) {
-    if (!groups.length) { el.breakdown.innerHTML = ''; return; }
+  function renderBreakdown(s, lines, rest) {
+    if (!s.groups.length) { el.breakdown.innerHTML = ''; return; }
     var den = comb(s.deck, s.hand);
-    var html = '<p class="bd-title">Each group on its own</p>';
+    var html = '';
 
-    groups.forEach(function (g, i) {
+    /* With either/or lines, each line's own chance first: the headline is
+       the chance of any of them, so it is at least the best of these. */
+    if (lines.length > 1) {
+      html += '<p class="bd-title">Each line on its own</p>';
+      lines.forEach(function (line, l) {
+        var p = ratio(countPassingHands(line.map(function (n, i) {
+          return { amt: s.groups[i].amt, min: n.min, max: n.max };
+        }), rest, s.hand), den);
+        html += '<div class="bd-row bd-line' + (l === activeLine ? ' is-shown' : '') + '">' +
+                  '<span class="bd-dot"></span>' +
+                  '<span class="bd-name">Line ' + (l + 1) + '</span>' +
+                  '<span class="bd-val">' + (p * 100).toFixed(1) + '%</span>' +
+                '</div>';
+      });
+    }
+
+    html += '<p class="bd-title">Each group on its own' +
+            (lines.length > 1 ? ', line ' + (activeLine + 1) : '') + '</p>';
+
+    s.groups.forEach(function (group, i) {
+      var g = { amt: group.amt, min: lines[activeLine][i].min, max: lines[activeLine][i].max };
       var dist = distribution(g.amt, s.deck, s.hand);
       var own = 0n;
       for (var k = g.min; k <= Math.min(g.max, g.amt, s.hand); k++) {
@@ -741,9 +893,9 @@
      are deliberately absent. */
   /** @param {Setup} s */
   function tallySignature(s) {
-    return s.deck + '/' + s.hand + '/' + s.groups.map(function (g) {
-      return g.amt + ':' + g.min + ':' + g.max;
-    }).join(',');
+    return s.deck + '/' + s.hand + '/' + amtsOf(s).join(',') + '/' + s.lines.map(function (line) {
+      return line.map(function (n) { return n.min + ':' + n.max; }).join(',');
+    }).join('|');
   }
 
   function resetTally() {
@@ -839,9 +991,11 @@
   function meets(tags) {
     var counts = state.groups.map(function () { return 0; });
     tags.forEach(function (g) { if (g >= 0) counts[g]++; });
-    return state.groups.every(function (g, i) {
-      var cap = g.max >= state.hand ? Infinity : g.max;
-      return counts[i] >= g.min && counts[i] <= cap;
+    return state.lines.some(function (line) {
+      return line.every(function (n, i) {
+        var cap = n.max >= state.hand ? Infinity : n.max;
+        return counts[i] >= n.min && counts[i] <= cap;
+      });
     });
   }
 
@@ -980,8 +1134,21 @@
   /** @param {Setup} s */
   function setupLines(s) {
     var lines = ['Deck of ' + s.deck + ', drawing ' + s.hand + '.'];
+    if (s.lines.length === 1) {
+      s.groups.forEach(function (g, i) {
+        var n = s.lines[0][i];
+        lines.push('• ' + groupLabel(g, i) + ': ' + g.amt + ' in deck, want ' + n.min + '–' + n.max + ' in hand.');
+      });
+      return lines;
+    }
     s.groups.forEach(function (g, i) {
-      lines.push('• ' + groupLabel(g, i) + ': ' + g.amt + ' in deck, want ' + g.min + '–' + g.max + ' in hand.');
+      lines.push('• ' + groupLabel(g, i) + ': ' + g.amt + ' in deck.');
+    });
+    lines.push('Opens if the hand meets any one line:');
+    s.lines.forEach(function (line, l) {
+      lines.push('  Line ' + (l + 1) + ' — ' + line.map(function (n, i) {
+        return groupLabel(s.groups[i], i) + ' ' + n.min + '–' + n.max;
+      }).join(', ') + '.');
     });
     return lines;
   }
@@ -1019,7 +1186,8 @@
   function loadState(s) {
     el['deck-size'].value = String(s.deck);
     el['hand-size'].value = String(s.hand);
-    renderGroups(s.groups.length ? s.groups : DEFAULTS.groups);
+    activeLine = 0;
+    renderGroups(s.groups.length ? s : DEFAULTS);
     syncChips();
     update();
   }
@@ -1079,7 +1247,12 @@
     el['add-group'].addEventListener('click', function () {
       var count = el.groups.querySelectorAll('.group').length;
       if (count >= MAX_GROUPS) return;
-      el.groups.appendChild(buildGroup({ name: '', amt: 3, min: 1, max: 3 }, count));
+      /* Wanted on the line on screen; on any other line it asks for nothing
+         until that line says otherwise. */
+      var needs = state.lines.map(function (_, l) {
+        return l === activeLine ? { min: 1, max: 3 } : { min: 0, max: Math.max(3, state.hand) };
+      });
+      el.groups.appendChild(buildGroup({ name: '', amt: 3 }, needs, count));
       renumber();
       var last = el.groups.lastElementChild;
       var added = last && last.querySelector('.g-name');
@@ -1102,6 +1275,20 @@
 
     el['draw-extra'].addEventListener('click', function () {
       drawExtra();
+    });
+
+    el['add-line'].addEventListener('click', function () {
+      addLine();
+    });
+
+    el['remove-line'].addEventListener('click', function () {
+      removeLine();
+    });
+
+    /* Delegated, since the line buttons come and go with the lines. */
+    el['lines-tabs'].addEventListener('click', function (e) {
+      var tab = e.target instanceof Element ? e.target.closest('.line-tab') : null;
+      if (tab instanceof HTMLElement) showLine(Number(tab.dataset.line));
     });
 
     el['compare-start'].addEventListener('click', function () {

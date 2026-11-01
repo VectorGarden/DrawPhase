@@ -290,7 +290,7 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 
-.chip {
+.chip, .line-tab {
   font-family: var(--font-body);
   font-size: .78rem; font-weight: 600;
   color: var(--ink-2);
@@ -301,8 +301,8 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
   cursor: pointer;
   transition: color .16s var(--ease), border-color .16s var(--ease), background-color .16s var(--ease);
 }
-.chip:hover { color: var(--ink); border-color: var(--accent); }
-.chip[aria-pressed='true'] {
+.chip:hover, .line-tab:hover { color: var(--ink); border-color: var(--accent); }
+.chip[aria-pressed='true'], .line-tab[aria-pressed='true'] {
   color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
 }
 
@@ -385,6 +385,19 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .rest-num.bad { color: var(--bad); font-weight: 700; }
 
 .group-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
+/* Either/or lines: which one the Min and Max columns are showing. */
+.lines-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  margin: -4px 0 16px; padding: 12px 14px;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: var(--r-sm);
+}
+.lines-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.line-tab { padding: 5px 13px; }
+.lines-remove { margin-left: auto; padding: 5px 11px; font-size: .78rem; }
+.lines-note { flex-basis: 100%; font-size: .82rem; color: var(--ink-2); }
 
 /* ==========================================================================
    Buttons
@@ -651,6 +664,10 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 }
 
 .bd-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.bd-line .bd-dot { background: var(--ink-3); border-radius: 50%; }
+.bd-line.is-shown .bd-dot { background: var(--accent); }
+.bd-line.is-shown .bd-name { color: var(--ink); font-weight: 600; }
+.bd-title ~ .bd-title { margin-top: 14px; }
 .bd-dot { width: 9px; height: 9px; border-radius: 2px; background: var(--spine); flex: none; }
 .bd-name {
   flex: 1; min-width: 0; font-size: .86rem; color: var(--ink-2);

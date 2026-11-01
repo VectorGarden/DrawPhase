@@ -45,6 +45,14 @@ jobs:
       # against tsconfig.json and emits nothing, so the site still ships as
       # written. Pinned, and fetched on the spot rather than installed, to keep
       # the repository free of a package.json.
+      # The deploy stamps ?v=dev with the commit so a release never runs
+      # beside stale cached scripts. A link without it would slip through.
+      - name: Check every asset link can be stamped
+        run: |
+          if grep -nE '(src|href)="\./assets/[^"?]+\.(js|css)"' index.html; then
+            echo "::error::the asset links above need ?v=dev"; exit 1
+          fi
+
       - name: Check the types
         run: npx --yes -p typescript@7.0.2 tsc -p .
 
@@ -87,6 +95,15 @@ jobs:
           done
           test -d assets || { echo "::error::assets/ is missing from the repository"; exit 1; }
           cp -R assets _site/assets
+
+          # Every script and the stylesheet are linked as ?v=dev (the test
+          # job checks none is missing it). Pages serves them all with a ten
+          # minute cache, so without this a returning visitor could pair a new
+          # app.js with an old math.js and get a page that cannot calculate.
+          # Stamping the commit gives each release its own URLs.
+          count=$(grep -o '?v=dev' _site/index.html | wc -l)
+          sed -i "s/?v=dev/?v=${GITHUB_SHA::7}/g" _site/index.html
+          echo "Stamped $count asset links with ${GITHUB_SHA::7}"
           echo "Publishing:"
           find _site -type f | sort | sed 's/^/  /'
 

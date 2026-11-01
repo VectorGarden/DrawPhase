@@ -17,6 +17,10 @@ around it is new.
   your requirements simultaneously.
 - **Dark and light themes.** Follows your system on first visit, remembers your
   choice after that, and applies before first paint so there is no flash.
+- **Either/or lines.** Real combos have alternatives: a starter, *or* two
+  extenders. Add up to four lines over the same groups, each with its own
+  minimums and maximums, and the headline becomes the chance of meeting any
+  one of them, still exact. Each line's own odds are listed beneath it.
 - **Per-group breakdown.** Each group's own odds plus a sparkline of how often
   you draw exactly 0, 1, 2 … copies.
 - **Deal a test hand.** Draws a real random hand and keeps a running hit rate,
@@ -138,7 +142,9 @@ No dependencies and no test framework, same as the rest of the repo. A wrong
 probability looks exactly like a right one — it is a plausible percentage
 either way — so the main check shares no reasoning with the code it tests: it
 builds a real deck, enumerates every hand that can be drawn from it, and
-counts the ones that pass, with no binomial coefficients involved. The rest
+counts the ones that pass, with no binomial coefficients involved. The same
+headcount checks either/or lines, where a hand passes if any line is met, so
+the inclusion and exclusion behind them is held to it too. The rest
 covers values worked out by hand, invariants that must hold for any input, and
 a ceiling on how long the twelve-group worst case may take, which is what
 stops the memoisation quietly regressing.
