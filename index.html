@@ -39,7 +39,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="./assets/styles.css" />
+<link rel="stylesheet" href="./assets/styles.css?v=dev" />
 </head>
 <body>
 
@@ -135,6 +135,14 @@
           <p class="panel-note">Group your cards by the job they do, then say how many of each you want to see in hand.</p>
         </div>
 
+        <!-- Shown once there are either/or lines: the groups are shared, and
+             Min and Max show the line pressed here. -->
+        <div class="lines-bar" id="lines-bar" hidden>
+          <div class="lines-tabs" id="lines-tabs" role="group" aria-label="Line shown in Min and Max"></div>
+          <button type="button" class="btn btn-quiet lines-remove" id="remove-line">Remove line 2</button>
+          <p class="lines-note" id="lines-note"></p>
+        </div>
+
         <div class="group-legend" aria-hidden="true">
           <span class="gl-name">Group</span>
           <span class="gl-num">In deck</span>
@@ -158,6 +166,10 @@
           <button type="button" class="btn btn-add" id="add-group">
             <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><path d="M12 5v14M5 12h14"/></svg>
             Add a group
+          </button>
+          <button type="button" class="btn btn-add" id="add-line">
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><path d="M5 7h9M5 12h14M5 17h9"/></svg>
+            Add an either/or line
           </button>
           <button type="button" class="btn btn-quiet" id="reset">Start over</button>
         </div>
@@ -288,8 +300,11 @@
   </li>
 </template>
 
-<script src="./assets/math.js"></script>
-<script src="./assets/share.js"></script>
-<script src="./assets/app.js"></script>
+<!-- The version query on each asset becomes the commit at deploy (see
+     ci.yml), so each release asks for its own copies and never runs beside a
+     stale cached script. -->
+<script src="./assets/math.js?v=dev"></script>
+<script src="./assets/share.js?v=dev"></script>
+<script src="./assets/app.js?v=dev"></script>
 </body>
 </html>

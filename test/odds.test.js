@@ -22,6 +22,7 @@
 var maths = require('../assets/math.js');
 var comb = maths.comb;
 var countPassingHands = maths.countPassingHands;
+var countPassingAny = maths.countPassingAny;
 var distribution = maths.distribution;
 var ratio = maths.ratio;
 
@@ -51,18 +52,27 @@ function report(name) {
 
 /* deck is an array of group indices, -1 meaning "everything else". */
 function countByEnumeration(deck, hand, groups) {
+  return countAnyByEnumeration(deck, hand, [groups]);
+}
+
+/* The same headcount for either/or lines: a hand passes when any one line is
+   met in full. Each line is a min and max per group. Still no binomials and
+   no inclusion-exclusion, just every hand checked against every line. */
+function countAnyByEnumeration(deck, hand, lines) {
   var n = deck.length;
   var indices = [];
   var passing = 0;
 
   function satisfied(pick) {
-    var counts = groups.map(function () { return 0; });
+    var counts = lines[0].map(function () { return 0; });
     for (var i = 0; i < pick.length; i++) {
       var tag = deck[pick[i]];
       if (tag >= 0) counts[tag]++;
     }
-    return groups.every(function (g, i) {
-      return counts[i] >= g.min && counts[i] <= g.max;
+    return lines.some(function (line) {
+      return line.every(function (g, i) {
+        return counts[i] >= g.min && counts[i] <= g.max;
+      });
     });
   }
 
@@ -90,12 +100,22 @@ function buildDeck(groups, rest) {
   return deck;
 }
 
-/* A tiny deterministic PRNG, so a failure can be reproduced exactly. */
+/* A tiny deterministic PRNG, so a failure can be reproduced exactly.
+
+   Mulberry32, as in deal.test.js. This used to be a textbook LCG, but
+   s * 1103515245 runs past 2^53, so the product lost its low bits to
+   floating point and s % n came out 0 nearly every time for small n. The
+   "400 random configurations" were close to one configuration: every group
+   held a single copy. Math.imul keeps the arithmetic in 32 bits, where it
+   belongs. */
 function makeRandom(seed) {
-  var s = seed;
+  var a = seed >>> 0;
   return function (n) {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s % n;
+    a = (a + 0x6D2B79F5) >>> 0;
+    var t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return Math.floor(((t ^ (t >>> 14)) >>> 0) / 4294967296 * n);
   };
 }
 
@@ -134,6 +154,69 @@ function makeRandom(seed) {
        JSON.stringify({ deck: deckSize, hand: hand, rest: rest, groups: groups }) +
        '\n      expected ' + expected + ', got ' + actual);
   }
+  done();
+})();
+
+/* --------------------------------------------------------------------------
+   1b. Either/or lines, against the same headcount
+
+   One to four lines over the same groups, each with its own ranges, chosen
+   so that lines overlap, nest and miss each other entirely. Inclusion and
+   exclusion has every chance to double count or subtract one time too many
+   here, and the enumeration has no such machinery to share the mistake.
+   -------------------------------------------------------------------------- */
+
+(function () {
+  var done = report('either/or lines enumerated, 300 random configurations');
+  var rnd = makeRandom(20261101);
+
+  for (var t = 0; t < 300; t++) {
+    var groupCount = 1 + rnd(3);
+    var amts = [];
+    var assigned = 0;
+    for (var i = 0; i < groupCount; i++) {
+      var amt = 1 + rnd(4);
+      assigned += amt;
+      amts.push(amt);
+    }
+    var rest = rnd(6);
+    var deckSize = assigned + rest;
+    var hand = 1 + rnd(Math.min(deckSize, 5));
+
+    var lines = [];
+    var lineCount = 1 + rnd(4);
+    for (var l = 0; l < lineCount; l++) {
+      /* Low minimums and wide ranges, so that lines overlap more often than
+         not. Narrow random ranges mostly miss each other, and then there is
+         nothing for the subtraction to get wrong. */
+      lines.push(amts.map(function (amt) {
+        var min = rnd(Math.min(amt, hand, 2) + 1);
+        return { min: min, max: Math.min(amt, min + rnd(amt + 1)) };
+      }));
+    }
+
+    var deck = buildDeck(amts.map(function (amt) { return { amt: amt }; }), rest);
+    var expected = countAnyByEnumeration(deck, hand, lines);
+    var actual = countPassingAny(amts, lines, rest, hand);
+
+    ok(actual === expected, 'either/or enumeration mismatch',
+       JSON.stringify({ deck: deckSize, hand: hand, rest: rest, amts: amts, lines: lines }) +
+       '\n      expected ' + expected + ', got ' + actual);
+
+    /* One line on its own is just the ordinary count. */
+    var single = countPassingAny(amts, [lines[0]], rest, hand);
+    var plain = countPassingHands(amts.map(function (amt, g) {
+      return { amt: amt, min: lines[0][g].min, max: lines[0][g].max };
+    }), rest, hand);
+    ok(single === plain, 'one line should count the same as countPassingHands',
+       'got ' + single + ' against ' + plain);
+  }
+
+  /* The same line twice is the same set of hands, not double the count. */
+  var line = [{ min: 1, max: 3 }, { min: 1, max: 2 }];
+  eq(countPassingAny([12, 9], [line, line], 19, 5), countPassingAny([12, 9], [line], 19, 5),
+     'a repeated line should not count its hands twice');
+
   done();
 })();
 

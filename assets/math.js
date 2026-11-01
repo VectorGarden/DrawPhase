@@ -101,6 +101,54 @@
     return walk(0, 0);
   }
 
+  /* Number of hands that meet at least one of several lines.
+
+     Each line is a min and max per group, all over the same cards. Counted
+     by inclusion and exclusion: add each line's hands, take away those two
+     lines share, add back those three share, and so on. Hands that meet a
+     set of lines at once are the ones inside every line's range for every
+     group, which is a single line of its own: the largest of their minimums
+     and the smallest of their maximums. So each term is one exact count from
+     countPassingHands, and a term whose range is empty is skipped, since no
+     hand can be in it. Four lines make fifteen terms at most. */
+  /**
+   * @param {number[]} amts
+   * @param {Need[][]} lines   lines[l][g], the need for group g on line l
+   * @param {number} rest
+   * @param {number} hand
+   * @returns {bigint}
+   */
+  function countPassingAny(amts, lines, rest, hand) {
+    var total = 0n;
+    for (var mask = 1; mask < (1 << lines.length); mask++) {
+      /** @type {Requirement[]} */
+      var groups = [];
+      var empty = false;
+      for (var g = 0; g < amts.length && !empty; g++) {
+        var lo = 0;
+        var hi = Infinity;
+        for (var l = 0; l < lines.length; l++) {
+          if (!(mask & (1 << l))) continue;
+          lo = Math.max(lo, lines[l][g].min);
+          hi = Math.min(hi, lines[l][g].max);
+        }
+        if (lo > hi) empty = true;
+        groups.push({ amt: amts[g], min: lo, max: hi });
+      }
+      if (empty) continue;
+      var count = countPassingHands(groups, rest, hand);
+      total += bitCount(mask) % 2 ? count : -count;
+    }
+    return total;
+  }
+
+  /** @param {number} mask */
+  function bitCount(mask) {
+    var n = 0;
+    for (; mask; mask >>= 1) n += mask & 1;
+    return n;
+  }
+
   /* P(exactly k copies of one group), k = 0 .. min(amt, hand) */
   /**
    * @param {number} amt
@@ -157,6 +205,7 @@
     comb: comb,
     ratio: ratio,
     countPassingHands: countPassingHands,
+    countPassingAny: countPassingAny,
     distribution: distribution,
     drawHand: drawHand
   };
