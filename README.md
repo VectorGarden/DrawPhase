@@ -24,6 +24,9 @@ around it is new.
 - **Draw extra cards.** After a deal, take the next card off the same shuffle
   to see how the hand develops, such as the first draw going second. Extras
   are judged on their own line and never touch the opening-hand tally.
+- **Compare two setups.** Copy the current setup into B, change what you are
+  weighing up, and see both figures side by side with the gap between them in
+  percentage points. Switch between A and B to edit either.
 - **Shareable setups.** "Copy link to this setup" encodes everything in the URL.
   Your last setup is also restored from local storage.
 - **Two worked examples** you can load with one click.
@@ -128,6 +131,7 @@ loaded outside a browser and checked:
 ```bash
 node test/odds.test.js
 node test/deal.test.js
+node test/share.test.js
 ```
 
 No dependencies and no test framework, same as the rest of the repo. A wrong
@@ -159,7 +163,13 @@ npx -p typescript@7.0.2 tsc -p .
 `types/globals.d.ts` holds the few declarations the two files share, chiefly
 the shape `math.js` exports. It is only read by the check and never shipped.
 
-GitHub Actions runs both suites and the type check on every push and pull
+`share.test.js` holds share links to their promise. A link to one setup
+encodes byte for byte as it did before comparisons existed, so links already
+shared keep opening; a comparison is a second shape beside it. Everything a
+link or local storage can hold, junk included, has to come out as a setup the
+page can render or as nothing, never as something that throws.
+
+GitHub Actions runs all three suites and the type check on every push and pull
 request, and the deploy job on `main` waits for them. A failing check means the live site keeps
 the last good version rather than taking the new one.
 

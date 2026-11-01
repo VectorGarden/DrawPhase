@@ -12,9 +12,9 @@
 (function () {
   'use strict';
 
+  /* Group and Setup are shared with share.js, so they live in
+     types/globals.d.ts. These are the page's own. */
   /**
-   * @typedef {{ name: string, amt: number, min: number, max: number }} Group
-   * @typedef {{ deck: number, hand: number, groups: Group[] }} Setup
    * @typedef {{ amt: boolean, min: boolean, max: boolean }} GroupFlags
    * @typedef {{
    *   ok: boolean,
@@ -30,10 +30,9 @@
 
   var THEME_KEY = 'drawphase.theme';
   var STATE_KEY = 'drawphase.state';
-  var MAX_GROUPS = 12;
   var MAX_DECK = 200;   /* matches the max= on #deck-size */
   var MAX_HAND = 60;    /* matches the max= on #hand-size */
-  var NAME_MAX = 30;    /* matches the maxlength= on a group name */
+  var LETTERS = ['A', 'B'];
   var SPINES = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6'];
 
   /** @type {Setup} */
@@ -69,6 +68,12 @@
      reads it before that first update anyway. */
   /** @type {Setup} */
   var state = DEFAULTS;
+  /* Every setup in play: just the one, or A and B while comparing. The form
+     edits setups[active], and update() writes the form back into it, so the
+     one on screen is always current and the other is as it was left. */
+  /** @type {Setup[]} */
+  var setups = [DEFAULTS];
+  var active = 0;
   var lastShown = 0;
   /** @type {string | null} */
   var lastSignature = null;
@@ -94,7 +99,10 @@
    *   'copy-summary': HTMLButtonElement, 'share-status': HTMLElement,
    *   'theme-toggle': HTMLButtonElement, 'meta-theme-color': HTMLMetaElement | null,
    *   examples: HTMLElement, 'examples-toggle': HTMLButtonElement,
-   *   'group-template': HTMLTemplateElement, 'group-status': HTMLElement | null
+   *   'group-template': HTMLTemplateElement, 'group-status': HTMLElement | null,
+   *   'odds-eyebrow': HTMLElement, compare: HTMLElement,
+   *   'compare-start': HTMLButtonElement, 'compare-tabs': HTMLElement,
+   *   'compare-delta': HTMLElement, 'compare-stop': HTMLButtonElement
    * }} Elements
    */
 
@@ -106,7 +114,8 @@
     'odds-value', 'odds-figure', 'odds-fill', 'odds-plain', 'hand-strip', 'deal',
     'draw-extra', 'deal-tally', 'deal-extra', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
     'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template',
-    'group-status'
+    'group-status', 'odds-eyebrow', 'compare', 'compare-start', 'compare-tabs',
+    'compare-delta', 'compare-stop'
   ]).forEach(function (id) {
     found[id] = document.getElementById(id);
   });
@@ -208,17 +217,15 @@
   var distribution = maths.distribution;
   var drawHand = maths.drawHand;
 
+  /* Links and the stored copy live in assets/share.js, for the same reason,
+     and are checked by test/share.test.js. */
+  var share = window.DrawPhaseShare;
+  var toInt = share.toInt;
+  var MAX_GROUPS = share.MAX_GROUPS;
+
   /* ======================================================================
      Reading the form
      ====================================================================== */
-
-  /* Takes anything, since stored and shared setups are untrusted JSON.
-     parseInt converts to a string first anyway, so String() changes nothing. */
-  /** @param {unknown} value */
-  function toInt(value) {
-    var n = parseInt(String(value), 10);
-    return isNaN(n) || n < 0 ? 0 : n;
-  }
 
   /** @returns {Setup} */
   function readState() {
@@ -491,8 +498,29 @@
      The main update pass
      ====================================================================== */
 
+  /* What the maths needs from a setup. A maximum is capped by the copies
+     there are and by the hand, since neither can be exceeded anyway. */
+  /** @param {Setup} s */
+  function requirements(s) {
+    return s.groups.map(function (g) {
+      return { amt: g.amt, min: g.min, max: Math.min(g.max, g.amt, s.hand) };
+    });
+  }
+
+  /* The chance a setup opens, or null when it does not add up. */
+  /**
+   * @param {Setup} s
+   * @returns {number | null}
+   */
+  function oddsOf(s) {
+    var check = validate(s);
+    if (!check.ok) return null;
+    return ratio(countPassingHands(requirements(s), s.deck - check.assigned, s.hand), comb(s.deck, s.hand));
+  }
+
   function update() {
     state = readState();
+    setups[active] = state;
 
     var check = validate(state);
     paintFlags(check);
@@ -522,15 +550,14 @@
       el['breakdown'].innerHTML = '';
       clearDeal();
       lastShown = 0;
+      renderCompare(null);
       save();
       return;
     }
 
     oddsCard.classList.remove('is-error');
 
-    var groups = state.groups.map(function (g) {
-      return { amt: g.amt, min: g.min, max: Math.min(g.max, g.amt, state.hand) };
-    });
+    var groups = requirements(state);
 
     var passing = countPassingHands(groups, rest, state.hand);
     var p = ratio(passing, comb(state.deck, state.hand));
@@ -547,7 +574,93 @@
 
     renderBreakdown(state, groups);
     clearDeal();
+    renderCompare(p);
     save();
+  }
+
+  /* ======================================================================
+     Comparing two setups
+     ====================================================================== */
+
+  /* The page is about the setup on screen; this is the one place both are
+     shown, and the difference between them. `onScreen` is the figure update()
+     already worked out, so only the other setup is computed here. */
+  /** @param {number | null} onScreen */
+  function renderCompare(onScreen) {
+    var comparing = setups.length > 1;
+    el['compare-start'].hidden = comparing;
+    el['compare-tabs'].hidden = !comparing;
+    el.compare.classList.toggle('is-comparing', comparing);
+    el['odds-eyebrow'].textContent = comparing
+      ? 'Chance to open setup ' + LETTERS[active]
+      : 'Chance to open this hand';
+    el['copy-link'].textContent = comparing ? 'Copy link to both setups' : 'Copy link to this setup';
+    if (!comparing) return;
+
+    var odds = setups.map(function (s, i) { return i === active ? onScreen : oddsOf(s); });
+
+    all(el['compare-tabs'], '.compare-tab').forEach(function (tab) {
+      var i = Number(tab.dataset.setup);
+      var p = odds[i];
+      tab.setAttribute('aria-pressed', String(i === active));
+      /** @type {HTMLElement} */ (tab.querySelector('.ct-odds')).textContent =
+        p === null ? '—' : (p * 100).toFixed(2) + '%';
+    });
+
+    el['compare-stop'].textContent = 'Keep only ' + LETTERS[active];
+    el['compare-delta'].className = 'compare-delta';
+    el['compare-delta'].innerHTML = compareLine(odds);
+    var a = odds[0], b = odds[1];
+    if (a !== null && b !== null && Math.abs(b - a) >= 0.00005) {
+      el['compare-delta'].classList.add(b > a ? 'up' : 'down');
+    }
+  }
+
+  /* B against A, in percentage points: the gap between two chances, which is
+     not the same thing as one being some percent better than the other. */
+  /** @param {(number | null)[]} odds */
+  function compareLine(odds) {
+    var a = odds[0], b = odds[1];
+    if (a === null || b === null) {
+      return 'Setup ' + (a === null ? 'A' : 'B') + ' does not add up yet, so there is nothing to compare.';
+    }
+    var gap = (b - a) * 100;
+    if (Math.abs(gap) < 0.005) return 'A and B open equally often.';
+    return 'B opens <strong>' + Math.abs(gap).toFixed(2) + ' percentage points ' +
+      (gap > 0 ? 'more' : 'less') + '</strong> often than A.';
+  }
+
+  /** @param {string} message */
+  function say(message) {
+    if (el['group-status']) el['group-status'].textContent = message;
+  }
+
+  /* Show setup `index` in the form. The one being left is already saved in
+     setups, since every edit writes it back. */
+  /** @param {number} index */
+  function showSetup(index) {
+    if (index === active || !setups[index]) return;
+    active = index;
+    loadState(setups[active]);
+  }
+
+  /* B starts as a copy of what is on screen: the question is nearly always
+     "what if I change one thing", so the one thing is all that is left to do. */
+  function startComparing() {
+    var copy = JSON.parse(JSON.stringify(state));
+    setups = [state, copy];
+    active = 1;
+    loadState(setups[1]);
+    say('Comparing. Now editing setup B, a copy of A.');
+  }
+
+  /* Keeps the setup on screen and drops the other. */
+  function stopComparing() {
+    var kept = LETTERS[active];
+    setups = [state];
+    active = 0;
+    update();
+    say('Stopped comparing. Kept setup ' + kept + '.');
   }
 
   /* ======================================================================
@@ -812,70 +925,20 @@
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
-      writeStore(STATE_KEY, JSON.stringify(state));
+      writeStore(STATE_KEY, JSON.stringify(share.toStored(setups, active)));
     }, 250);
   }
 
-  /** @param {Setup} s */
-  function encodeState(s) {
-    var compact = {
-      d: s.deck,
-      h: s.hand,
-      g: s.groups.map(function (g) { return [g.name, g.amt, g.min, g.max]; })
-    };
-    var json = JSON.stringify(compact);
-    return btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-
-  /* Every setup that reaches the form comes through here, from a link or from
-     storage alike. The link was the only guarded path before, which left the
-     stored copy to walk unchecked into buildGroup: one null group threw, and
-     because init() wires its listeners after loadState, the page came up inert
-     with no way back — typing did nothing, and "Start over" was dead too, on
-     that reload and every one after it.
-
-     `raw` is any on purpose: it is parsed JSON, and checking it is this
-     function's whole job. What comes out is a Setup. */
+  /* Puts a set of setups on the page, from a link, storage or the defaults,
+     opening on `index`. */
   /**
-   * @param {any} raw
-   * @returns {Setup | null}
+   * @param {Setup[]} list
+   * @param {number} index
    */
-  function normaliseState(raw) {
-    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.groups)) return null;
-    return {
-      deck: toInt(raw.deck),
-      hand: toInt(raw.hand),
-      groups: raw.groups.slice(0, MAX_GROUPS).map(/** @param {any} g */ function (g) {
-        if (!g || typeof g !== 'object') g = {};
-        return {
-          name: typeof g.name === 'string' ? g.name.slice(0, NAME_MAX) : '',
-          amt: toInt(g.amt),
-          min: toInt(g.min),
-          max: toInt(g.max)
-        };
-      })
-    };
-  }
-
-  /**
-   * @param {string} token
-   * @returns {Setup | null}
-   */
-  function decodeState(token) {
-    try {
-      var b64 = token.replace(/-/g, '+').replace(/_/g, '/');
-      while (b64.length % 4) b64 += '=';
-      var parsed = JSON.parse(decodeURIComponent(escape(atob(b64))));
-      if (!parsed || !Array.isArray(parsed.g)) return null;
-      return normaliseState({
-        deck: parsed.d,
-        hand: parsed.h,
-        groups: parsed.g.map(/** @param {any} g */ function (g) {
-          if (!Array.isArray(g)) g = [];
-          return { name: g[0], amt: g[1], min: g[2], max: g[3] };
-        })
-      });
-    } catch (e) { return null; }
+  function loadSetups(list, index) {
+    setups = list.slice();
+    active = index;
+    loadState(setups[active]);
   }
 
   /** @type {number | undefined} */
@@ -914,7 +977,17 @@
     }
   }
 
+  /** @param {Setup} s */
+  function setupLines(s) {
+    var lines = ['Deck of ' + s.deck + ', drawing ' + s.hand + '.'];
+    s.groups.forEach(function (g, i) {
+      lines.push('• ' + groupLabel(g, i) + ': ' + g.amt + ' in deck, want ' + g.min + '–' + g.max + ' in hand.');
+    });
+    return lines;
+  }
+
   function summaryText() {
+    if (setups.length > 1) return compareSummary();
     var lines = [];
     /* Read the computed figure, not the headline element: that text is a
        tween for 300ms after every edit, and it is the placeholder dash
@@ -922,9 +995,18 @@
     lines.push(oddsCard.classList.contains('is-error')
       ? 'Opening hand odds — this setup does not add up yet.'
       : 'Opening hand odds — ' + lastShown.toFixed(2) + '%');
-    lines.push('Deck of ' + state.deck + ', drawing ' + state.hand + '.');
-    state.groups.forEach(function (g, i) {
-      lines.push('• ' + groupLabel(g, i) + ': ' + g.amt + ' in deck, want ' + g.min + '–' + g.max + ' in hand.');
+    return lines.concat(setupLines(state)).join('\n');
+  }
+
+  function compareSummary() {
+    var odds = setups.map(oddsOf);
+    /** @param {number | null} p */
+    var figure = function (p) { return p === null ? 'does not add up yet' : (p * 100).toFixed(2) + '%'; };
+    var lines = ['Opening hand odds — A ' + figure(odds[0]) + ', B ' + figure(odds[1]) + '.'];
+    lines.push(compareLine(odds).replace(/<[^>]+>/g, ''));
+    setups.forEach(function (s, i) {
+      lines.push('', 'Setup ' + LETTERS[i] + ' — ' + figure(odds[i]));
+      lines = lines.concat(setupLines(s));
     });
     return lines.join('\n');
   }
@@ -954,26 +1036,27 @@
   function init() {
     initTheme();
 
-    /** @type {Setup | null} */
+    /** @type {Stored | null} */
     var initial = null;
     var hash = window.location.hash;
-    if (hash.indexOf('#d=') === 0) initial = decodeState(hash.slice(3));
+    var linked = hash.indexOf('#d=') === 0 ? share.decodeLink(hash.slice(3)) : null;
+    if (linked) initial = { setups: linked, active: 0 };
     if (!initial) {
       var stored = readStore(STATE_KEY);
       if (stored) {
-        try { initial = normaliseState(JSON.parse(stored)); } catch (e) { initial = null; }
+        try { initial = share.fromStored(JSON.parse(stored)); } catch (e) { initial = null; }
       }
     }
-    if (!initial) initial = DEFAULTS;
+    if (!initial) initial = { setups: [DEFAULTS], active: 0 };
 
     /* Every listener below this line is attached after loadState, so a setup
        that throws here would cost the page its wiring entirely. Falling back
        is worth more than honouring a setup we cannot render; the defaults get
        saved over the bad value on the way through, so it does not come back. */
     try {
-      loadState(initial);
+      loadSetups(initial.setups, initial.active);
     } catch (e) {
-      loadState(DEFAULTS);
+      loadSetups([DEFAULTS], 0);
     }
 
     /* Any edit anywhere in the form recalculates */
@@ -1007,7 +1090,7 @@
 
     el.reset.addEventListener('click', function () {
       if (window.location.hash) history.replaceState(null, '', window.location.pathname + window.location.search);
-      loadState(DEFAULTS);
+      loadSetups([DEFAULTS], 0);   /* a comparison goes too */
       resetTally();   /* "Start over" means the dealt hands go too, even when
                          the numbers happen to already match the defaults. */
       flash('Back to the starting setup.');
@@ -1021,11 +1104,26 @@
       drawExtra();
     });
 
+    el['compare-start'].addEventListener('click', function () {
+      startComparing();
+    });
+
+    el['compare-stop'].addEventListener('click', function () {
+      stopComparing();
+      el['compare-start'].focus();   /* the button that was pressed is now hidden */
+    });
+
+    all(el['compare-tabs'], '.compare-tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        showSetup(Number(tab.dataset.setup));
+      });
+    });
+
     el['copy-link'].addEventListener('click', function () {
       var url = window.location.origin === 'null' || !window.location.origin
         ? window.location.href.split('#')[0]
         : window.location.origin + window.location.pathname;
-      copyText(url + '#d=' + encodeState(state), 'Link copied.');
+      copyText(url + '#d=' + share.encodeLink(setups), 'Link copied.');
     });
 
     el['copy-summary'].addEventListener('click', function () {
@@ -1052,8 +1150,8 @@
     });
 
     window.addEventListener('hashchange', function () {
-      var next = window.location.hash.indexOf('#d=') === 0 ? decodeState(window.location.hash.slice(3)) : null;
-      if (next) loadState(next);
+      var next = window.location.hash.indexOf('#d=') === 0 ? share.decodeLink(window.location.hash.slice(3)) : null;
+      if (next) loadSetups(next, 0);
     });
   }
 

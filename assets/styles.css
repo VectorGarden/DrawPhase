@@ -471,6 +471,60 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .panel-math em { color: var(--ink); font-style: normal; font-weight: 600; }
 
 /* ==========================================================================
+   Comparing two setups
+   ========================================================================== */
+
+.compare { display: flex; flex-direction: column; }
+.compare-start { align-self: flex-start; }
+
+.compare-tabs {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 14px; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  transition: background-color .3s var(--ease), border-color .3s var(--ease);
+}
+
+.compare-pair { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* Each half shows its own figure, so the pair is the comparison at a glance;
+   the pressed one is the setup the form is editing. */
+.compare-tab {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 2px 10px;
+  padding: 10px 14px;
+  font: inherit; text-align: left;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: border-color .16s var(--ease), background-color .16s var(--ease), color .16s var(--ease);
+}
+.compare-tab:hover { border-color: var(--accent); }
+.compare-tab[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.ct-name { font-size: .86rem; font-weight: 600; }
+.ct-odds {
+  font-family: var(--font-mono); font-size: 1.08rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+
+.compare-delta { font-size: .86rem; color: var(--ink-2); }
+.compare-delta strong { color: var(--ink); font-weight: 600; }
+.compare-delta.up strong { color: var(--good); }
+.compare-delta.down strong { color: var(--bad); }
+
+.compare-stop { padding: 6px 12px; font-size: .8rem; }
+
+/* ==========================================================================
    Odds panel
    ========================================================================== */
 
@@ -652,6 +706,9 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
   .panel, .odds-card { padding: 18px 16px; border-radius: var(--r-md); }
 
   .deck-grid { grid-template-columns: 1fr; gap: 16px; }
+
+  .compare-tabs { grid-template-columns: 1fr; padding: 12px; border-radius: var(--r-md); }
+  .compare-stop { justify-self: start; }
 
   .group-legend { display: none; }
 
