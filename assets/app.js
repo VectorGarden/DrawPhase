@@ -46,12 +46,13 @@
   var lastSignature = null;
   var deals = 0;
   var hits = 0;
+  var dealt = null;   /* the last shuffle, while its hand is on show */
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   var el = {};
   ['deck-size', 'hand-size', 'groups', 'rest-amt', 'rest-max', 'add-group', 'reset',
    'odds-value', 'odds-figure', 'odds-fill', 'odds-plain', 'hand-strip', 'deal',
-   'deal-tally', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
+   'draw-extra', 'deal-tally', 'deal-extra', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
    'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template',
    'group-status']
     .forEach(function (id) {
@@ -398,7 +399,7 @@
       el['odds-fill'].style.width = '0%';
       el['odds-plain'].innerHTML = check.problems[0];
       el['breakdown'].innerHTML = '';
-      renderHand(null);
+      clearDeal();
       lastShown = 0;
       save();
       return;
@@ -424,7 +425,7 @@
     lastShown = pct;
 
     renderBreakdown(state, groups);
-    renderHand(null);
+    clearDeal();
     save();
   }
 
@@ -527,19 +528,24 @@
      hand showed only the front of a sorted list — hiding whichever groups sort
      last, even though the hit/miss tally had already counted them. MAX_HAND is
      the bound now: a valid hand never exceeds it, and an invalid one (this runs
-     on the error path too) can't spin up a runaway number of nodes. */
-  function renderHand(cards) {
-    var size = Math.min(state ? state.hand : 5, MAX_HAND);
+     on the error path too) can't spin up a runaway number of nodes.
+
+     Extra cards follow the opening hand behind a divider, in the order they
+     were drawn. Only cards from `fresh` onwards play the flip, so drawing one
+     more does not re-deal the whole strip in front of you. A dealt strip is
+     sized by its cards, which the deck bounds; MAX_HAND guards the rest. */
+  function renderHand(cards, opening, fresh) {
+    var size = cards ? cards.length : Math.min(state ? state.hand : 5, MAX_HAND);
     var html = '';
     for (var i = 0; i < size; i++) {
+      if (cards && i === opening) html += '<span class="hand-sep" aria-hidden="true"></span>';
+      var cls = 'hand-card' + (cards && i >= opening ? ' extra' : '') + (cards && i >= fresh ? ' dealt' : '');
       if (cards && cards[i]) {
         var c = cards[i];
-        html += '<span class="hand-card filled dealt" style="--spine:' + spineFor(c.index) + '">' +
+        html += '<span class="' + cls + ' filled" style="--spine:' + spineFor(c.index) + '">' +
                 escapeHtml(c.label) + '</span>';
-      } else if (cards) {
-        html += '<span class="hand-card dealt"></span>';
       } else {
-        html += '<span class="hand-card"></span>';
+        html += '<span class="' + cls + '"></span>';
       }
     }
     var strip = el['hand-strip'];
@@ -550,9 +556,11 @@
        information, and the whole strip is one picture of it — hence a single
        described image rather than a run of cryptic two-letter chips. */
     if (cards) {
+      var label = 'Hand dealt: ' + describeHand(cards.slice(0, opening)) + '.';
+      if (size > opening) label += ' Then drew ' + describeHand(cards.slice(opening)) + '.';
       strip.removeAttribute('aria-hidden');
       strip.setAttribute('role', 'img');
-      strip.setAttribute('aria-label', 'Hand dealt: ' + describeHand(cards) + '.');
+      strip.setAttribute('aria-label', label);
     } else {
       strip.setAttribute('aria-hidden', 'true');
       strip.removeAttribute('role');
@@ -560,32 +568,58 @@
     }
   }
 
+  function toCard(g) {
+    if (g < 0) return null;
+    var name = groupLabel(state.groups[g], g);
+    return { index: g, label: name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || String(g + 1) };
+  }
+
+  /* Whether a run of drawn tags meets every group's requirement. A maximum
+     at or above the hand size is how "no upper limit" gets written, so it
+     stays unlimited once extra cards take the count past the hand. */
+  function meets(tags) {
+    var counts = state.groups.map(function () { return 0; });
+    tags.forEach(function (g) { if (g >= 0) counts[g]++; });
+    return state.groups.every(function (g, i) {
+      var cap = g.max >= state.hand ? Infinity : g.max;
+      return counts[i] >= g.min && counts[i] <= cap;
+    });
+  }
+
+  /* The hand goes, and the shuffle behind it with it. Runs on every edit,
+     since an extra card drawn from the old setup's deck means nothing in the
+     new one. The tally is left alone: resetTally decides when that goes. */
+  function clearDeal() {
+    dealt = null;
+    el['draw-extra'].hidden = true;
+    el['deal-extra'].innerHTML = '';
+    renderHand(null);
+  }
+
   function deal() {
     if (oddsCard.classList.contains('is-error')) return;
 
+    /* The whole deck is shuffled, not just the hand, so extra cards come off
+       the top of the same shuffle. The first `hand` cards of a full partial
+       Fisher-Yates are exactly the sample a hand-sized one would give. */
     var rest = state.deck - state.groups.reduce(function (sum, g) { return sum + g.amt; }, 0);
-    var drawn = drawHand(
+    var order = drawHand(
       state.groups.map(function (g) { return g.amt; }),
       rest,
-      state.hand,
+      state.deck,
       Math.random
     );
-
-    var counts = state.groups.map(function () { return 0; });
-    drawn.forEach(function (g) { if (g >= 0) counts[g]++; });
-
-    var pass = state.groups.every(function (g, i) {
-      return counts[i] >= g.min && counts[i] <= Math.min(g.max, g.amt, state.hand);
-    });
+    var drawn = order.slice(0, state.hand);
+    var pass = meets(drawn);
 
     var cards = drawn.slice().sort(function (a, b) { return (a < 0 ? 99 : a) - (b < 0 ? 99 : b); })
-      .map(function (g) {
-        if (g < 0) return null;
-        var name = groupLabel(state.groups[g], g);
-        return { index: g, label: name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || String(g + 1) };
-      });
+      .map(toCard);
 
-    renderHand(cards);
+    dealt = { order: order, cards: cards, extra: 0 };
+    renderHand(cards, state.hand, 0);
+    el['deal-extra'].innerHTML = '';
+    el['draw-extra'].hidden = false;
+    el['draw-extra'].disabled = order.length <= state.hand;
 
     deals++;
     if (pass) hits++;
@@ -595,6 +629,32 @@
       /* Announced with the result, so pressing Deal says what turned up
          instead of only whether it counted. Visually this stays compact. */
       '<span class="sr-only"> — drew ' + escapeHtml(describeHand(cards)) + '.</span>';
+  }
+
+  /* One more card off the shuffle. Reported on its own line and never added
+     to the tally, which samples the opening hand the headline odds are for. */
+  function drawExtra() {
+    if (!dealt) return;
+    var next = state.hand + dealt.extra;
+    if (next >= dealt.order.length) return;
+
+    dealt.extra++;
+    var card = toCard(dealt.order[next]);
+    dealt.cards.push(card);
+    renderHand(dealt.cards, state.hand, dealt.cards.length - 1);
+
+    var pass = meets(dealt.order.slice(0, next + 1));
+    el['deal-extra'].innerHTML = 'With ' + dealt.extra + ' extra card' + (dealt.extra === 1 ? '' : 's') +
+      ': <span class="' + (pass ? 'hit' : 'miss') + '">' + (pass ? 'Hit' : 'Miss') + '</span>' +
+      '<span class="sr-only"> — drew ' + escapeHtml(describeHand([card])) + '.</span>';
+
+    /* The deck has run out. Focus would be stranded on a disabled button, so
+       it goes back to Deal, the one thing still worth pressing. */
+    if (next + 1 >= dealt.order.length) {
+      el['draw-extra'].disabled = true;
+      el['deal-extra'].innerHTML += ' · that was the last card';
+      el.deal.focus();
+    }
   }
 
   /* ======================================================================
@@ -785,6 +845,10 @@
 
     el.deal.addEventListener('click', function () {
       deal();
+    });
+
+    el['draw-extra'].addEventListener('click', function () {
+      drawExtra();
     });
 
     el['copy-link'].addEventListener('click', function () {
