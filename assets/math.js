@@ -7,19 +7,28 @@
    against a straight enumeration of every possible hand.
 
    Loaded as a plain script by index.html, or required from Node. No build
-   step and no dependencies either way.
+   step and no dependencies either way. The JSDoc is checked by tsc against
+   types/globals.d.ts, where DrawPhaseMathApi is the shape exported here.
    ========================================================================== */
+
+// @ts-check
 
 (function (root, factory) {
   'use strict';
   var api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.DrawPhaseMath = api;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, /** @returns {DrawPhaseMathApi} */ function () {
   'use strict';
 
+  /** @type {Record<string, bigint>} */
   var combCache = Object.create(null);
 
+  /**
+   * @param {number} n
+   * @param {number} k
+   * @returns {bigint}
+   */
   function comb(n, k) {
     if (k < 0 || n < 0 || k > n) return 0n;
     if (k === 0 || k === n) return 1n;
@@ -37,6 +46,10 @@
 
   var SCALE = 1000000000000n; /* 1e12 — plenty for a percentage */
 
+  /**
+   * @param {bigint} num
+   * @param {bigint} den
+   */
   function ratio(num, den) {
     if (den === 0n || num === 0n) return 0;
     return Number(num * SCALE / den) / 1e12;
@@ -50,10 +63,22 @@
      that the walk visits every combination in turn — roughly fourteen times more
      work per group added, which locks the tab up somewhere around eight groups
      on a large hand. Memoised it is a few hundred states at worst. */
+  /**
+   * @param {Requirement[]} groups
+   * @param {number} rest
+   * @param {number} hand
+   * @returns {bigint}
+   */
   function countPassingHands(groups, rest, hand) {
+    /** @type {Record<number, bigint>[]} */
     var memo = [];
     for (var m = 0; m < groups.length; m++) memo.push(Object.create(null));
 
+    /**
+     * @param {number} i
+     * @param {number} drawn
+     * @returns {bigint}
+     */
     function walk(i, drawn) {
       if (i === groups.length) {
         return comb(rest, hand - drawn);
@@ -77,6 +102,11 @@
   }
 
   /* P(exactly k copies of one group), k = 0 .. min(amt, hand) */
+  /**
+   * @param {number} amt
+   * @param {number} deck
+   * @param {number} hand
+   */
   function distribution(amt, deck, hand) {
     var den = comb(deck, hand);
     var out = [];
@@ -99,13 +129,21 @@
      have pushed undefined for every card past the end of the deck had a hand
      larger than the deck ever reached it. Validation stops that today, so it
      was latent rather than live, but the bound belongs here. */
+  /**
+   * @param {number[]} groups
+   * @param {number} rest
+   * @param {number} hand
+   * @param {() => number} random
+   */
   function drawHand(groups, rest, hand, random) {
+    /** @type {number[]} */
     var pile = [];
     for (var g = 0; g < groups.length; g++) {
       for (var n = 0; n < groups[g]; n++) pile.push(g);
     }
     for (var r = 0; r < rest; r++) pile.push(-1);
 
+    /** @type {number[]} */
     var drawn = [];
     for (var i = 0; i < hand && i < pile.length; i++) {
       var j = i + Math.floor(random() * (pile.length - i));

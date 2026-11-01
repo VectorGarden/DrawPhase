@@ -148,8 +148,19 @@ from a seeded generator so the result is fixed rather than merely likely. Its
 last section runs three broken shuffles through the identical check and
 insists they are rejected, so the test re-earns its power on every run.
 
-GitHub Actions runs both suites on every push and pull request, and the
-deploy job on `main` waits for them. A failing check means the live site keeps
+The scripts are also type-checked. They stay plain JavaScript, with types
+written as JSDoc comments, and `tsc` checks those against `tsconfig.json`
+without emitting anything, so there is still no build step:
+
+```bash
+npx -p typescript@7.0.2 tsc -p .
+```
+
+`types/globals.d.ts` holds the few declarations the two files share, chiefly
+the shape `math.js` exports. It is only read by the check and never shipped.
+
+GitHub Actions runs both suites and the type check on every push and pull
+request, and the deploy job on `main` waits for them. A failing check means the live site keeps
 the last good version rather than taking the new one.
 
 ## How the maths works

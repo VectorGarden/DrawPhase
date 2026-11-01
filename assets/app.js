@@ -2,10 +2,31 @@
    Draw Phase — Yu-Gi-Oh! opening hand odds
    Exact multivariate hypergeometric odds, computed with BigInt so the
    numbers stay honest even on a 60 card deck.
+
+   Plain JavaScript, no build step. The JSDoc is checked by tsc (see
+   tsconfig.json), so a type here is a claim CI holds the code to.
    ========================================================================== */
+
+// @ts-check
 
 (function () {
   'use strict';
+
+  /**
+   * @typedef {{ name: string, amt: number, min: number, max: number }} Group
+   * @typedef {{ deck: number, hand: number, groups: Group[] }} Setup
+   * @typedef {{ amt: boolean, min: boolean, max: boolean }} GroupFlags
+   * @typedef {{
+   *   ok: boolean,
+   *   problems: string[],
+   *   flags: { deck: boolean, hand: boolean, groups: GroupFlags[] },
+   *   assigned: number,
+   *   required: number
+   * }} Check
+   * A dealt card, or null for one from everything else:
+   * @typedef {{ index: number, label: string } | null} Card
+   * @typedef {{ order: number[], cards: Card[], extra: number }} Shuffle
+   */
 
   var THEME_KEY = 'drawphase.theme';
   var STATE_KEY = 'drawphase.state';
@@ -15,6 +36,7 @@
   var NAME_MAX = 30;    /* matches the maxlength= on a group name */
   var SPINES = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6'];
 
+  /** @type {Setup} */
   var DEFAULTS = {
     deck: 40,
     hand: 5,
@@ -24,6 +46,7 @@
     ]
   };
 
+  /** @type {Record<string, Setup>} */
   var EXAMPLES = {
     allure: {
       deck: 40, hand: 5,
@@ -41,33 +64,96 @@
     }
   };
 
-  var state = null;
+  /* Replaced by the first update(), and by every one after it. Starting on
+     the defaults rather than null means it is never missing, and nothing
+     reads it before that first update anyway. */
+  /** @type {Setup} */
+  var state = DEFAULTS;
   var lastShown = 0;
+  /** @type {string | null} */
   var lastSignature = null;
   var deals = 0;
   var hits = 0;
+  /** @type {Shuffle | null} */
   var dealt = null;   /* the last shuffle, while its hand is on show */
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  var el = {};
-  ['deck-size', 'hand-size', 'groups', 'rest-amt', 'rest-max', 'add-group', 'reset',
-   'odds-value', 'odds-figure', 'odds-fill', 'odds-plain', 'hand-strip', 'deal',
-   'draw-extra', 'deal-tally', 'deal-extra', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
-   'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template',
-   'group-status']
-    .forEach(function (id) {
-      el[id] = document.getElementById(id);
-    });
+  /* Every element the script touches, by id, and what kind of element it is.
+     The two allowed to be missing are typed as possibly null and checked
+     where they are used; the rest are in index.html, and the page cannot
+     work without them. */
+  /**
+   * @typedef {{
+   *   'deck-size': HTMLInputElement, 'hand-size': HTMLInputElement,
+   *   groups: HTMLOListElement, 'rest-amt': HTMLElement, 'rest-max': HTMLElement,
+   *   'add-group': HTMLButtonElement, reset: HTMLButtonElement,
+   *   'odds-value': HTMLElement, 'odds-figure': HTMLElement, 'odds-fill': HTMLElement,
+   *   'odds-plain': HTMLElement, 'hand-strip': HTMLElement, deal: HTMLButtonElement,
+   *   'draw-extra': HTMLButtonElement, 'deal-tally': HTMLElement, 'deal-extra': HTMLElement,
+   *   breakdown: HTMLElement, 'copy-link': HTMLButtonElement,
+   *   'copy-summary': HTMLButtonElement, 'share-status': HTMLElement,
+   *   'theme-toggle': HTMLButtonElement, 'meta-theme-color': HTMLMetaElement | null,
+   *   examples: HTMLElement, 'examples-toggle': HTMLButtonElement,
+   *   'group-template': HTMLTemplateElement, 'group-status': HTMLElement | null
+   * }} Elements
+   */
 
-  var oddsCard = document.querySelector('.odds-card');
+  /** @type {Record<string, HTMLElement | null>} */
+  var found = {};
+  /** @type {(keyof Elements)[]} */
+  ([
+    'deck-size', 'hand-size', 'groups', 'rest-amt', 'rest-max', 'add-group', 'reset',
+    'odds-value', 'odds-figure', 'odds-fill', 'odds-plain', 'hand-strip', 'deal',
+    'draw-extra', 'deal-tally', 'deal-extra', 'breakdown', 'copy-link', 'copy-summary', 'share-status',
+    'theme-toggle', 'meta-theme-color', 'examples', 'examples-toggle', 'group-template',
+    'group-status'
+  ]).forEach(function (id) {
+    found[id] = document.getElementById(id);
+  });
+  var el = /** @type {Elements} */ (/** @type {unknown} */ (found));
+
+  var oddsCard = /** @type {HTMLElement} */ (document.querySelector('.odds-card'));
+
+  /* querySelector only knows it found an Element. These say what kind, for
+     the selectors this page owns, so the casts live in one place. */
+
+  /**
+   * @param {ParentNode} root
+   * @param {string} selector
+   * @returns {HTMLElement[]}
+   */
+  function all(root, selector) {
+    return Array.prototype.slice.call(root.querySelectorAll(selector));
+  }
+
+  /**
+   * @param {ParentNode} root
+   * @param {string} selector
+   */
+  function field(root, selector) {
+    return /** @type {HTMLInputElement} */ (root.querySelector(selector));
+  }
+
+  /**
+   * @param {ParentNode} root
+   * @param {string} selector
+   */
+  function button(root, selector) {
+    return /** @type {HTMLButtonElement} */ (root.querySelector(selector));
+  }
 
   /* ======================================================================
      Storage helpers — every call is wrapped, private mode must not break us
      ====================================================================== */
 
+  /** @param {string} key */
   function readStore(key) {
     try { return localStorage.getItem(key); } catch (e) { return null; }
   }
+  /**
+   * @param {string} key
+   * @param {string} value
+   */
   function writeStore(key, value) {
     try { localStorage.setItem(key, value); } catch (e) { /* nothing to do */ }
   }
@@ -76,6 +162,7 @@
      Theme
      ====================================================================== */
 
+  /** @param {string} theme */
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     var next = theme === 'dark' ? 'light' : 'dark';
@@ -100,6 +187,7 @@
 
     /* Follow the system only while the visitor hasn't made their own choice */
     var mq = window.matchMedia('(prefers-color-scheme: light)');
+    /** @param {MediaQueryListEvent} e */
     var onChange = function (e) {
       if (!readStore(THEME_KEY)) applyTheme(e.matches ? 'light' : 'dark');
     };
@@ -124,19 +212,24 @@
      Reading the form
      ====================================================================== */
 
+  /* Takes anything, since stored and shared setups are untrusted JSON.
+     parseInt converts to a string first anyway, so String() changes nothing. */
+  /** @param {unknown} value */
   function toInt(value) {
-    var n = parseInt(value, 10);
+    var n = parseInt(String(value), 10);
     return isNaN(n) || n < 0 ? 0 : n;
   }
 
+  /** @returns {Setup} */
   function readState() {
+    /** @type {Group[]} */
     var groups = [];
-    Array.prototype.forEach.call(el.groups.querySelectorAll('.group'), function (node) {
+    all(el.groups, '.group').forEach(function (node) {
       groups.push({
-        name: node.querySelector('.g-name').value,
-        amt: toInt(node.querySelector('.g-amt').value),
-        min: toInt(node.querySelector('.g-min').value),
-        max: toInt(node.querySelector('.g-max').value)
+        name: field(node, '.g-name').value,
+        amt: toInt(field(node, '.g-amt').value),
+        min: toInt(field(node, '.g-min').value),
+        max: toInt(field(node, '.g-max').value)
       });
     });
     return {
@@ -146,10 +239,15 @@
     };
   }
 
+  /**
+   * @param {Group} group
+   * @param {number} index
+   */
   function groupLabel(group, index) {
     return group.name.trim() || 'Group ' + (index + 1);
   }
 
+  /** @param {number} index */
   function spineFor(index) {
     return 'var(' + SPINES[index % SPINES.length] + ')';
   }
@@ -158,8 +256,14 @@
      Validation
      ====================================================================== */
 
+  /**
+   * @param {Setup} s
+   * @returns {Check}
+   */
   function validate(s) {
+    /** @type {string[]} */
     var problems = [];
+    /** @type {Check['flags']} */
     var flags = { deck: false, hand: false, groups: [] };
     s.groups.forEach(function () { flags.groups.push({ amt: false, min: false, max: false }); });
 
@@ -212,20 +316,21 @@
   /* One pass, driven by the state we just read, so a rename is reflected the
      moment it is typed. */
   function nameGroups() {
-    Array.prototype.forEach.call(el.groups.querySelectorAll('.group'), function (node, i) {
+    all(el.groups, '.group').forEach(function (node, i) {
       var body = node.querySelector('.group-body');
       if (body && state.groups[i]) body.setAttribute('aria-label', groupLabel(state.groups[i], i));
     });
   }
 
+  /** @param {Check} check */
   function paintFlags(check) {
     el['deck-size'].classList.toggle('invalid', check.flags.deck);
     el['hand-size'].classList.toggle('invalid', check.flags.hand);
-    Array.prototype.forEach.call(el.groups.querySelectorAll('.group'), function (node, i) {
-      var f = check.flags.groups[i] || {};
-      node.querySelector('.g-amt').classList.toggle('invalid', !!f.amt);
-      node.querySelector('.g-min').classList.toggle('invalid', !!f.min);
-      node.querySelector('.g-max').classList.toggle('invalid', !!f.max);
+    all(el.groups, '.group').forEach(function (node, i) {
+      var f = check.flags.groups[i] || { amt: false, min: false, max: false };
+      field(node, '.g-amt').classList.toggle('invalid', f.amt);
+      field(node, '.g-min').classList.toggle('invalid', f.min);
+      field(node, '.g-max').classList.toggle('invalid', f.max);
     });
   }
 
@@ -233,18 +338,21 @@
      Presentation helpers
      ====================================================================== */
 
+  /** @param {number} p */
   function tone(p) {
     if (p < 0.30) return 'var(--bad)';
     if (p < 0.70) return 'var(--warn)';
     return 'var(--good)';
   }
 
+  /** @param {number} x */
   function trim(x) {
     if (x >= 100) return String(Math.round(x));
     if (x >= 10) return x.toFixed(0);
     return x.toFixed(1).replace(/\.0$/, '');
   }
 
+  /** @param {number} p */
   function plainLanguage(p) {
     if (p <= 0) return 'No hand in this deck can meet those requirements.';
     if (p >= 0.99995) return 'Every possible opening hand meets these requirements.';
@@ -259,6 +367,7 @@
     return inTwenty > 0 ? line + ' — near ' + inTwenty + ' of every 20 duels.' : line + '.';
   }
 
+  /** @type {number | null} */
   var animFrame = null;
 
   function stopAnimation() {
@@ -268,6 +377,10 @@
     }
   }
 
+  /**
+   * @param {number} from
+   * @param {number} to
+   */
   function animateNumber(from, to) {
     stopAnimation();
     /* requestAnimationFrame does not fire while the tab is hidden, so the
@@ -280,6 +393,7 @@
     }
     var start = performance.now();
     var span = 300;
+    /** @param {number} now */
     function step(now) {
       var t = Math.min(1, (now - start) / span);
       var eased = 1 - Math.pow(1 - t, 3);
@@ -296,13 +410,18 @@
   var FIELDS = ['.g-name', '.g-amt', '.g-min', '.g-max'];
   var groupSeq = 0;
 
+  /**
+   * @param {Group} data
+   * @param {number} index
+   */
   function buildGroup(data, index) {
-    var node = el['group-template'].content.firstElementChild.cloneNode(true);
+    var node = /** @type {HTMLLIElement} */ (
+      /** @type {Element} */ (el['group-template'].content.firstElementChild).cloneNode(true));
     node.style.setProperty('--spine', spineFor(index));
-    node.querySelector('.g-name').value = data.name || '';
-    node.querySelector('.g-amt').value = data.amt;
-    node.querySelector('.g-min').value = data.min;
-    node.querySelector('.g-max').value = data.max;
+    field(node, '.g-name').value = data.name || '';
+    field(node, '.g-amt').value = String(data.amt);
+    field(node, '.g-min').value = String(data.min);
+    field(node, '.g-max').value = String(data.max);
 
     /* The template's labels carry no `for`, and the group rows are clones, so
        there is no id to point at until one is minted here. Without this every
@@ -311,20 +430,20 @@
        "Starters" off the shared placeholder. */
     var uid = 'grp' + (++groupSeq);
     FIELDS.forEach(function (sel) {
-      var input = node.querySelector(sel);
-      var label = input.parentNode.querySelector('label');
+      var input = field(node, sel);
+      var label = input.parentElement && input.parentElement.querySelector('label');
       input.id = uid + sel.replace('.g-', '-');
       if (label) label.setAttribute('for', input.id);
     });
     /* Named on the body rather than the <li> so the list keeps its item
        semantics; it tells you which group the four fields belong to. */
-    node.querySelector('.group-body').setAttribute('role', 'group');
+    /** @type {Element} */ (node.querySelector('.group-body')).setAttribute('role', 'group');
 
-    node.querySelector('.btn-remove').addEventListener('click', function () {
+    button(node, '.btn-remove').addEventListener('click', function () {
       /* Work out where to land before the node goes: removing it drops focus
          to the body, and the next Tab then restarts from the top of the
          document, which loses a keyboard user their place entirely. */
-      var rows = Array.prototype.slice.call(el.groups.querySelectorAll('.group'));
+      var rows = all(el.groups, '.group');
       var at = rows.indexOf(node);
       var neighbour = rows[at + 1] || rows[at - 1];
 
@@ -334,8 +453,8 @@
 
       /* The neighbour's own remove button, unless removing left one group and
          disabled it — then the button that is still worth pressing. */
-      var landing = neighbour && !neighbour.querySelector('.btn-remove').disabled
-        ? neighbour.querySelector('.btn-remove')
+      var landing = neighbour && !button(neighbour, '.btn-remove').disabled
+        ? button(neighbour, '.btn-remove')
         : (el['add-group'].disabled ? null : el['add-group']);
       if (landing) landing.focus();
 
@@ -344,6 +463,7 @@
     return node;
   }
 
+  /** @param {string} what */
   function announce(what) {
     if (!el['group-status']) return;
     var count = el.groups.querySelectorAll('.group').length;
@@ -352,14 +472,15 @@
   }
 
   function renumber() {
-    var nodes = el.groups.querySelectorAll('.group');
-    Array.prototype.forEach.call(nodes, function (node, i) {
+    var nodes = all(el.groups, '.group');
+    nodes.forEach(function (node, i) {
       node.style.setProperty('--spine', spineFor(i));
-      node.querySelector('.btn-remove').disabled = nodes.length <= 1;
+      button(node, '.btn-remove').disabled = nodes.length <= 1;
     });
     el['add-group'].disabled = nodes.length >= MAX_GROUPS;
   }
 
+  /** @param {Group[]} groups */
   function renderGroups(groups) {
     el.groups.innerHTML = '';
     groups.forEach(function (g, i) { el.groups.appendChild(buildGroup(g, i)); });
@@ -379,9 +500,9 @@
 
     var rest = state.deck - check.assigned;
     var restMax = state.hand - check.required;
-    el['rest-amt'].textContent = rest;
+    el['rest-amt'].textContent = String(rest);
     el['rest-amt'].classList.toggle('bad', rest < 0);
-    el['rest-max'].textContent = restMax < 0 ? '\u2212' + Math.abs(restMax) : restMax;
+    el['rest-max'].textContent = restMax < 0 ? '\u2212' + Math.abs(restMax) : String(restMax);
     el['rest-max'].classList.toggle('bad', restMax < 0);
 
     /* The tally is a running sample of these exact odds, so it only goes stale
@@ -438,6 +559,11 @@
      asking for eight showed no highlighted bar at all, which reads as "this
      never happens". Trim only where the probability is too small to see, and
      never trim across the range the user actually asked for. */
+  /**
+   * @param {number[]} dist
+   * @param {number} lo
+   * @param {number} hi
+   */
   function sparkRange(dist, lo, hi) {
     var EPS = 0.0005;
     var first = 0;
@@ -447,6 +573,10 @@
     return { first: first, last: last };
   }
 
+  /**
+   * @param {Setup} s
+   * @param {Requirement[]} groups
+   */
   function renderBreakdown(s, groups) {
     if (!groups.length) { el.breakdown.innerHTML = ''; return; }
     var den = comb(s.deck, s.hand);
@@ -482,10 +612,12 @@
     el.breakdown.innerHTML = html;
   }
 
+  /** @type {Record<string, string>} */
+  var ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+  /** @param {unknown} str */
   function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
+    return String(str).replace(/[&<>"']/g, function (c) { return ENTITIES[c]; });
   }
 
   /* ======================================================================
@@ -494,6 +626,7 @@
 
   /* Everything that moves the odds, and nothing that does not — group names
      are deliberately absent. */
+  /** @param {Setup} s */
   function tallySignature(s) {
     return s.deck + '/' + s.hand + '/' + s.groups.map(function (g) {
       return g.amt + ':' + g.min + ':' + g.max;
@@ -509,13 +642,16 @@
   /* What the strip is showing, in words. Two-letter chips coloured by group
      are meaningless read aloud one by one, so the hand is summarised by what
      it actually contains. */
+  /** @param {Card[]} cards */
   function describeHand(cards) {
+    /** @type {Record<number, number>} */
     var counts = {};
     var others = 0;
     cards.forEach(function (c) {
       if (!c) { others++; return; }
       counts[c.index] = (counts[c.index] || 0) + 1;
     });
+    /** @type {string[]} */
     var parts = [];
     state.groups.forEach(function (g, i) {
       if (counts[i]) parts.push(counts[i] + ' ' + groupLabel(g, i));
@@ -534,14 +670,19 @@
      were drawn. Only cards from `fresh` onwards play the flip, so drawing one
      more does not re-deal the whole strip in front of you. A dealt strip is
      sized by its cards, which the deck bounds; MAX_HAND guards the rest. */
+  /**
+   * @param {Card[] | null} cards
+   * @param {number} opening
+   * @param {number} fresh
+   */
   function renderHand(cards, opening, fresh) {
-    var size = cards ? cards.length : Math.min(state ? state.hand : 5, MAX_HAND);
+    var size = cards ? cards.length : Math.min(state.hand, MAX_HAND);
     var html = '';
     for (var i = 0; i < size; i++) {
       if (cards && i === opening) html += '<span class="hand-sep" aria-hidden="true"></span>';
       var cls = 'hand-card' + (cards && i >= opening ? ' extra' : '') + (cards && i >= fresh ? ' dealt' : '');
-      if (cards && cards[i]) {
-        var c = cards[i];
+      var c = cards ? cards[i] : null;
+      if (c) {
         html += '<span class="' + cls + ' filled" style="--spine:' + spineFor(c.index) + '">' +
                 escapeHtml(c.label) + '</span>';
       } else {
@@ -568,6 +709,10 @@
     }
   }
 
+  /**
+   * @param {number} g
+   * @returns {Card}
+   */
   function toCard(g) {
     if (g < 0) return null;
     var name = groupLabel(state.groups[g], g);
@@ -577,6 +722,7 @@
   /* Whether a run of drawn tags meets every group's requirement. A maximum
      at or above the hand size is how "no upper limit" gets written, so it
      stays unlimited once extra cards take the count past the hand. */
+  /** @param {number[]} tags */
   function meets(tags) {
     var counts = state.groups.map(function () { return 0; });
     tags.forEach(function (g) { if (g >= 0) counts[g]++; });
@@ -593,7 +739,7 @@
     dealt = null;
     el['draw-extra'].hidden = true;
     el['deal-extra'].innerHTML = '';
-    renderHand(null);
+    renderHand(null, 0, 0);
   }
 
   function deal() {
@@ -661,7 +807,8 @@
      Persistence and sharing
      ====================================================================== */
 
-  var saveTimer = null;
+  /** @type {number | undefined} */
+  var saveTimer;
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
@@ -669,6 +816,7 @@
     }, 250);
   }
 
+  /** @param {Setup} s */
   function encodeState(s) {
     var compact = {
       d: s.deck,
@@ -684,13 +832,20 @@
      stored copy to walk unchecked into buildGroup: one null group threw, and
      because init() wires its listeners after loadState, the page came up inert
      with no way back — typing did nothing, and "Start over" was dead too, on
-     that reload and every one after it. */
+     that reload and every one after it.
+
+     `raw` is any on purpose: it is parsed JSON, and checking it is this
+     function's whole job. What comes out is a Setup. */
+  /**
+   * @param {any} raw
+   * @returns {Setup | null}
+   */
   function normaliseState(raw) {
     if (!raw || typeof raw !== 'object' || !Array.isArray(raw.groups)) return null;
     return {
       deck: toInt(raw.deck),
       hand: toInt(raw.hand),
-      groups: raw.groups.slice(0, MAX_GROUPS).map(function (g) {
+      groups: raw.groups.slice(0, MAX_GROUPS).map(/** @param {any} g */ function (g) {
         if (!g || typeof g !== 'object') g = {};
         return {
           name: typeof g.name === 'string' ? g.name.slice(0, NAME_MAX) : '',
@@ -702,6 +857,10 @@
     };
   }
 
+  /**
+   * @param {string} token
+   * @returns {Setup | null}
+   */
   function decodeState(token) {
     try {
       var b64 = token.replace(/-/g, '+').replace(/_/g, '/');
@@ -711,7 +870,7 @@
       return normaliseState({
         deck: parsed.d,
         hand: parsed.h,
-        groups: parsed.g.map(function (g) {
+        groups: parsed.g.map(/** @param {any} g */ function (g) {
           if (!Array.isArray(g)) g = [];
           return { name: g[0], amt: g[1], min: g[2], max: g[3] };
         })
@@ -719,12 +878,20 @@
     } catch (e) { return null; }
   }
 
+  /** @type {number | undefined} */
+  var flashTimer;
+
+  /** @param {string} message */
   function flash(message) {
     el['share-status'].textContent = message;
-    clearTimeout(flash.timer);
-    flash.timer = setTimeout(function () { el['share-status'].textContent = ''; }, 2600);
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { el['share-status'].textContent = ''; }, 2600);
   }
 
+  /**
+   * @param {string} text
+   * @param {string} okMessage
+   */
   function copyText(text, okMessage) {
     var done = function () { flash(okMessage); };
     var fallback = function () {
@@ -766,19 +933,20 @@
      Wiring
      ====================================================================== */
 
+  /** @param {Setup} s */
   function loadState(s) {
-    el['deck-size'].value = s.deck;
-    el['hand-size'].value = s.hand;
+    el['deck-size'].value = String(s.deck);
+    el['hand-size'].value = String(s.hand);
     renderGroups(s.groups.length ? s.groups : DEFAULTS.groups);
     syncChips();
     update();
   }
 
   function syncChips() {
-    document.querySelectorAll('.chip[data-deck]').forEach(function (chip) {
+    all(document, '.chip[data-deck]').forEach(function (chip) {
       chip.setAttribute('aria-pressed', String(el['deck-size'].value === chip.dataset.deck));
     });
-    document.querySelectorAll('.chip[data-hand]').forEach(function (chip) {
+    all(document, '.chip[data-hand]').forEach(function (chip) {
       chip.setAttribute('aria-pressed', String(el['hand-size'].value === chip.dataset.hand));
     });
   }
@@ -786,6 +954,7 @@
   function init() {
     initTheme();
 
+    /** @type {Setup | null} */
     var initial = null;
     var hash = window.location.hash;
     if (hash.indexOf('#d=') === 0) initial = decodeState(hash.slice(3));
@@ -809,13 +978,13 @@
 
     /* Any edit anywhere in the form recalculates */
     document.addEventListener('input', function (e) {
-      if (e.target.matches('#deck-size, #hand-size, .g-name, .g-amt, .g-min, .g-max')) {
+      if (e.target instanceof Element && e.target.matches('#deck-size, #hand-size, .g-name, .g-amt, .g-min, .g-max')) {
         syncChips();
         update();
       }
     });
 
-    document.querySelectorAll('.chip').forEach(function (chip) {
+    all(document, '.chip').forEach(function (chip) {
       chip.addEventListener('click', function () {
         if (chip.dataset.deck) el['deck-size'].value = chip.dataset.deck;
         if (chip.dataset.hand) el['hand-size'].value = chip.dataset.hand;
@@ -829,8 +998,9 @@
       if (count >= MAX_GROUPS) return;
       el.groups.appendChild(buildGroup({ name: '', amt: 3, min: 1, max: 3 }, count));
       renumber();
-      var added = el.groups.lastElementChild.querySelector('.g-name');
-      if (added) added.focus();
+      var last = el.groups.lastElementChild;
+      var added = last && last.querySelector('.g-name');
+      if (added instanceof HTMLElement) added.focus();
       update();
       announce('Group added.');
     });
@@ -868,10 +1038,13 @@
       el.examples.hidden = open;
     });
 
-    document.querySelectorAll('[data-example]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        loadState(EXAMPLES[button.dataset.example]);
-        document.getElementById('deck-setup').scrollIntoView({
+    all(document, '[data-example]').forEach(function (trigger) {
+      trigger.addEventListener('click', function () {
+        var example = trigger.dataset.example && EXAMPLES[trigger.dataset.example];
+        if (!example) return;
+        loadState(example);
+        var setup = document.getElementById('deck-setup');
+        if (setup) setup.scrollIntoView({
           behavior: reduceMotion ? 'auto' : 'smooth',
           block: 'start'
         });
