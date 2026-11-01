@@ -211,8 +211,14 @@
             <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><path d="M4.5 8.2 14 4.4l5.5 12.2-9.5 3.8z"/><path d="M8.4 11.6h5.2"/></svg>
             Deal a test hand
           </button>
+          <!-- Only offered once there is a hand to draw onto. -->
+          <button type="button" class="btn btn-ghost" id="draw-extra" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-icon"><path d="M12 5v14M5 12h14"/></svg>
+            Draw extra card
+          </button>
           <p class="deal-tally" id="deal-tally" aria-live="polite"></p>
         </div>
+        <p class="deal-extra" id="deal-extra" aria-live="polite"></p>
 
         <div class="breakdown" id="breakdown"></div>
 

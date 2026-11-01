@@ -21,6 +21,9 @@ around it is new.
   you draw exactly 0, 1, 2 … copies.
 - **Deal a test hand.** Draws a real random hand and keeps a running hit rate,
   which converges on the exact figure.
+- **Draw extra cards.** After a deal, take the next card off the same shuffle
+  to see how the hand develops, such as the first draw going second. Extras
+  are judged on their own line and never touch the opening-hand tally.
 - **Shareable setups.** "Copy link to this setup" encodes everything in the URL.
   Your last setup is also restored from local storage.
 - **Two worked examples** you can load with one click.

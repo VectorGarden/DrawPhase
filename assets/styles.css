@@ -411,6 +411,10 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 
 .btn-quiet { background: none; color: var(--ink-2); }
 
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn:disabled:hover { border-color: var(--line); color: var(--ink-2); }
+.btn:disabled:active { transform: none; }
+
 .btn-ghost {
   background: none; border-color: var(--line); color: var(--ink-2);
   font-size: .82rem; padding: 7px 13px;
@@ -558,6 +562,14 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
   font-size: .5rem; border-radius: 4px;
 }
 
+/* Cards drawn after the opening hand sit behind a rule, and carry an accent
+   ring so they still read as extras once the strip wraps onto a new row. */
+.hand-sep {
+  flex: none; width: 2px; margin: 0 3px; border-radius: 1px;
+  background: var(--accent); opacity: .55;
+}
+.hand-card.extra { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+
 .hand-card.dealt { animation: flip-in .38s var(--ease) both; }
 @keyframes flip-in {
   from { transform: rotateY(-82deg) translateY(5px); opacity: 0; }
@@ -568,6 +580,11 @@ input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .deal-tally { font-family: var(--font-mono); font-size: .76rem; color: var(--ink-3); }
 .deal-tally .hit { color: var(--good); font-weight: 700; }
 .deal-tally .miss { color: var(--bad); font-weight: 700; }
+
+.deal-extra { font-family: var(--font-mono); font-size: .76rem; color: var(--ink-3); margin-top: 8px; }
+.deal-extra:empty { display: none; }
+.deal-extra .hit { color: var(--good); font-weight: 700; }
+.deal-extra .miss { color: var(--bad); font-weight: 700; }
 
 /* Per-group breakdown --------------------------------------------------- */
 

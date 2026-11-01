@@ -208,10 +208,39 @@ function pValue(chi, df) {
 })();
 
 /* --------------------------------------------------------------------------
-   3. The check has teeth
+   3. Extra cards off the same shuffle
+
+   The page now shuffles the whole deck on Deal and shows the first `hand`
+   cards, so "Draw extra card" can take the next one off the same shuffle.
+   Both halves of that need to hold: the opening hand from a full shuffle is
+   still the hand the odds describe, and the hand plus each extra card is a
+   fair draw of that many cards, without replacement.
+   -------------------------------------------------------------------------- */
+
+(function () {
+  var groups = [12, 9], rest = 19, hand = 5, deck = 40;
+
+  [0, 1, 3].forEach(function (extra, index) {
+    var random = seeded(0xE7A + index);
+    var size = hand + extra;
+    var sample = function (g, r) { return drawHand(g, r, deck, random).slice(0, size); };
+    var r = chiSquare(sample, groups, rest, size, 120000);
+    var p = pValue(r.chi, r.df);
+    var name = extra === 0
+      ? 'the opening hand from a full-deck shuffle'
+      : 'the hand plus ' + extra + ' extra card' + (extra === 1 ? '' : 's') + ' from the same shuffle';
+    ok(p > 1e-6, 'sample departs from the exact distribution — ' + name,
+       'chi-square ' + r.chi.toFixed(1) + ' on ' + r.df + ' df, p = ' + p.toFixed(4));
+    report('✓ ' + name, '(chi-square ' + r.chi.toFixed(1) + '/' + r.df + ' df, p = ' + p.toFixed(3) + ')');
+  });
+})();
+
+/* --------------------------------------------------------------------------
+   4. The check has teeth
 
    Three ways the shuffle could plausibly be got wrong, run through the very
-   same chi-square. If these are not rejected then section 1 proves nothing.
+   same chi-square. If these are not rejected then sections 1 and 3 prove
+   nothing.
    -------------------------------------------------------------------------- */
 
 (function () {
